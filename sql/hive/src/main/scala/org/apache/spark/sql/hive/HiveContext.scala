@@ -256,6 +256,18 @@ class HiveContext(sc: SparkContext) extends SQLContext(sc) {
             val asRows = output.map(r => new GenericRow(r.split("\t").asInstanceOf[Array[Any]]))
             sparkContext.parallelize(asRows, 1)
           }
+        case StreamSQLDDLCommand(plan) =>
+           plan match {
+             case ddl: streamsql.StreamSQLDDLPlan =>
+               val output = ddl.execute()
+               if (output.size == 0) {
+                 emptyResult
+               } else {
+                 val asRows = output.map(r => new GenericRow(r.split("\t").asInstanceOf[Array[Any]]))
+                 sparkContext.parallelize(asRows, 1)
+               }
+             case _ => emptyResult
+           }
         case _ =>
           executedPlan.execute().map(_.copy())
       }
