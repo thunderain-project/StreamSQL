@@ -28,6 +28,8 @@ import org.apache.hadoop.hive.ql.parse._
 import org.apache.hadoop.hive.metastore.api.FieldSchema
 import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer
 
+import org.apache.spark.sql.hive.HiveQl
+
 import scala.reflect._
 
 import scala.collection.JavaConversions._
@@ -47,13 +49,23 @@ class CreateStreamLikeDesc extends CreateTableLikeDesc with BaseCreateStreamDesc
   super.getTblProps.put(streamProp._1, streamProp._2)
 }
 
+//TODO to update the analyzer based on getClause and Token, instead of hive utils.
 object StreamSQLDDLPostParser {
+  protected def getUnescapedTableName(node: ASTNode): String = {
+    val Some(tableNameParts) = HiveQl.getClauseOption("TOK_TABNAME", node.getChildren)
+    val tablename: String =
+      tableNameParts.getChildren.map{ case HiveQl.Token(part, Nil) => HiveQl.cleanIdentifier(part)} match {
+        case Seq(tableOnly) => tableOnly
+        case Seq(databaseName, table) => "%s.%s".format(databaseName, table)
+      }
+    tablename
+  }
 
   def analyzeDropStreamDesc(node: ASTNode):  DropTableDesc = {
     val dropTableDesc = new DropTableDesc()
-    dropTableDesc.setIfExists(node.getFirstChildWithType(HiveParser.TOK_IFEXISTS) != null)
+    dropTableDesc.setIfExists(HiveQl.getClauseOption("TOK_IFEXISTS", node.getChildren).isDefined)
     //pass the tab or db.tab into table_name field.
-    dropTableDesc.setTableName(BaseSemanticAnalyzer.getUnescapedName(node.getChild(0).asInstanceOf[ASTNode]))
+    dropTableDesc.setTableName(getUnescapedTableName(node))
     //not supportive
     dropTableDesc.setExpectView(false)
     dropTableDesc
@@ -69,7 +81,7 @@ object StreamSQLDDLPostParser {
       = Value
     }
 
-    val tableName = BaseSemanticAnalyzer.getUnescapedName(node.getChild(0).asInstanceOf[ASTNode])
+    val tableName = getUnescapedTableName(node)
     var likeTableName: String = null
     var ifNotExists: Boolean = false
     var creatStreamType: CreateStreamType.Value = CreateStreamType.CS
@@ -81,14 +93,14 @@ object StreamSQLDDLPostParser {
     for (cnode <- node.getChildren ) {
       val child = cnode.asInstanceOf[ASTNode]
       // Use token type instead of text to avoid some up-/low-case mismatch issues.
-      child.getToken.getType match {
-        case HiveParser.TOK_IFNOTEXISTS => ifNotExists = true
-        case HiveParser.KW_EXTERNAL =>
+      child.getText match {
+        case "TOK_IFNOTEXISTS" => ifNotExists = true
+        case "KW_EXTERNAL" =>
           //do nothing, since we force all stream table as external table,
           //which is beyond the management scope of hive warehouse
-        case HiveParser.TOK_LIKETABLE =>
+        case "TOK_LIKETABLE" =>
           if(child.getChildCount > 0) {
-            likeTableName = BaseSemanticAnalyzer.getUnescapedName(child.getChild(0).asInstanceOf[ASTNode])
+            likeTableName = getUnescapedTableName(child)
             if ( CreateStreamType.CSAS == creatStreamType) {
               // no csas and csl[s|t]
               throw new SemanticException("Create Stream Like Stream/Table cannot co-exist with Create Stream As Stream");
@@ -98,33 +110,34 @@ object StreamSQLDDLPostParser {
             }
             creatStreamType = CreateStreamType.CSL
           }
-        case HiveParser.TOK_QUERY =>
+        case "TOK_QUERY" =>
           creatStreamType = CreateStreamType.CSAS
           throw new NotImplementedError(s"Not support yet:\n ${HiveQl.dumpTree(child).toString} ")
-        case HiveParser.TOK_TABCOLLIST =>
+        case "TOK_TABCOLLIST" =>
           cols = BaseSemanticAnalyzer.getColumns(child, true)
-        case HiveParser.TOK_TABLECOMMENT =>
+        case "TOK_TABLECOMMENT" =>
           comment = BaseSemanticAnalyzer.unescapeSQLString(child.getChild(0).getText)
-        case HiveParser.TOK_TABLEROWFORMAT =>
-        case HiveParser.TOK_TABLELOCATION =>
+        case "TOK_TABLEROWFORMAT" =>
+        case "TOK_TABLELOCATION" =>
           location = BaseSemanticAnalyzer.unescapeSQLString(child.getChild(0).getText)
-        case HiveParser.TOK_TABLEPROPERTIES =>
+        case "TOK_TABLEPROPERTIES" =>
+          //todo check essential properties for stream
           BaseSemanticAnalyzer.readProps(child.getChild(0).asInstanceOf[ASTNode], tblProps)
-//        case HiveParser.TOK_TABLEROWFORMAT =>
+//        case "TOK_TABLEROWFORMAT" =>
 //           //TODO
-//        case HiveParser.TOK_TABLESERIALIZER =>
+//        case "TOK_TABLESERIALIZER" =>
 //           //TODO
-//        case HiveParser.TOK_STORAGEHANDLER =>
+//        case "TOK_STORAGEHANDLER" =>
 //           //TODO
-//        case HiveParser.TOK_TABLEFILEFORMAT =>
+//        case "TOK_TABLEFILEFORMAT" =>
 //           //TODO input/output class
-        case HiveParser.TOK_TABLEBUCKETS =>
+        case "TOK_TABLEBUCKETS" =>
           throw new NotImplementedError(s"Not support yet:\n ${HiveQl.dumpTree(child).toString} ")
-        case HiveParser.TOK_TABLEPARTCOLS =>
+        case "TOK_TABLEPARTCOLS" =>
           throw new NotImplementedError(s"Not support yet:\n ${HiveQl.dumpTree(child).toString} ")
-        case HiveParser.TOK_FILEFORMAT_GENERIC =>
+        case "TOK_FILEFORMAT_GENERIC" =>
           throw new SemanticException("Unrecongized file format in STORED AS clause: " + child.getText)
-        case HiveParser.TOK_TABLESKEWED  =>
+        case "TOK_TABLESKEWED"  =>
           throw new NotImplementedError(s"Not support yet:\n ${HiveQl.dumpTree(child).toString} ")
         case _ =>
           throw new AssertionError("Unknow token: " + child.getToken)
