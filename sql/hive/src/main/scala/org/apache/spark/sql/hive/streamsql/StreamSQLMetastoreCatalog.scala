@@ -22,6 +22,9 @@ package streamsql
 import org.apache.hadoop.hive.ql.plan.{CreateTableLikeDesc, DDLDesc, CreateTableDesc, DropTableDesc}
 import org.apache.hadoop.hive.metastore.api.{Table => TTable, Partition => TPartition}
 import org.apache.hadoop.hive.ql.metadata.{Hive, Partition, Table}
+import java.net.URI
+import org.apache.hadoop.hive.metastore.TableType
+import org.apache.hadoop.hive.ql.session.SessionState
 
 
 class StreamSQLMetastoreCatalog (hive: HiveContext) extends HiveMetastoreCatalog(hive) {
@@ -33,12 +36,63 @@ class StreamSQLMetastoreCatalog (hive: HiveContext) extends HiveMetastoreCatalog
     }
   }
 
+  //namespace decoration
   def createStream(createStreamDesc: CreateStreamDesc) = {
+    val tbl = super.client.newTable(createStreamDesc.getTableName)
 
+    if(createStreamDesc.getTblProps != null) {
+      tbl.getTTable.getParameters.putAll(createStreamDesc.getTblProps)
+    }
+
+    if(createStreamDesc.getCols != null) {
+      tbl.setFields(createStreamDesc.getCols)
+    }
+
+    if(createStreamDesc.getComment != null) {
+      tbl.setProperty("comment", createStreamDesc.getComment)
+    }
+
+    if(createStreamDesc.getLocation != null) {
+      tbl.setDataLocation(new URI(createStreamDesc.getLocation))
+    }
+
+    if(createStreamDesc.isExternal) {
+      tbl.setProperty("EXTERNAL", "TRUE")
+      tbl.setTableType(TableType.EXTERNAL_TABLE)
+    }
+
+    tbl.setOwner(SessionState.getUserFromAuthenticator)
+    tbl.setCreateTime((System.currentTimeMillis()/1000).toInt)
+
+    super.client.createTable(tbl, createStreamDesc.getIfNotExists)
   }
 
+  //namespace decoration
   def createStreamLike(createStreamLikeDesc: CreateStreamLikeDesc) = {
+    val tbl = super.client.getTable(createStreamLikeDesc.getLikeTableName)
+    val newTable = super.client.newTable(createStreamLikeDesc.getTableName)
+    tbl.setDbName(newTable.getDbName)
+    tbl.setTableName(newTable.getTableName)
 
+    if(createStreamLikeDesc.getLocation != null) {
+      tbl.setDataLocation(new URI(createStreamLikeDesc.getLocation))
+    } else {
+      tbl.unsetDataLocation()
+    }
+
+    val params = tbl.getParameters
+    if(createStreamLikeDesc.getTblProps != null) {
+      params.putAll(createStreamLikeDesc.getTblProps)
+    }
+
+    if(createStreamLikeDesc.isExternal) {
+      tbl.setProperty("EXTERNAL", "TRUE")
+      tbl.setTableType(TableType.EXTERNAL_TABLE)
+    }
+    tbl.setOwner(SessionState.getUserFromAuthenticator)
+    tbl.setCreateTime((System.currentTimeMillis()/1000).toInt)
+
+    super.client.createTable(tbl, createStreamLikeDesc.getIfNotExists)
   }
 
 }

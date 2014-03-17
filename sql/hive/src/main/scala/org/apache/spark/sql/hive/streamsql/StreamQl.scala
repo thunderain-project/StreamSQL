@@ -64,7 +64,7 @@ object StreamQl {
         // TODO CTAS ?
         // prepare the parameters into LogicalPlan
         // wrap that LogicalPlan with StreamSQLDDLCommand
-        StreamSQLDDLCommand(new DropStream(a))
+        StreamSQLDDLCommand(new CreateStream(a))
       case _ =>
         throw new NotImplementedError(s"No parse rules for:\n ${HiveQl.dumpTree(a).toString} ")
     }
