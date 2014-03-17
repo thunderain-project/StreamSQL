@@ -73,17 +73,23 @@ object StreamQl {
 }
 
 class DropStream(node: ASTNode) extends StreamSQLDDLPlan {
-  def execute(): Seq[String] = {
+  def execute(catalog: StreamSQLMetastoreCatalog): Seq[String] = {
     //TODO
     val results = new JArrayList[String]
+    val dropStreamDesc = StreamSQLDDLPostParser.analyzeDropStreamDesc(node)
+    catalog.dropStream(dropStreamDesc)
     results
   }
 }
 
 class CreateStream(node: ASTNode) extends StreamSQLDDLPlan {
-  def execute(): Seq[String] = {
+  def execute(catalog: StreamSQLMetastoreCatalog): Seq[String] = {
     //TODO
     val results = new JArrayList[String]
+    StreamSQLDDLPostParser.analyzeDropStreamDesc(node) match {
+      case csd: CreateStreamDesc =>  catalog.createStream(csd)
+      case csld: CreateStreamLikeDesc => catalog.createStreamLike(csld)
+    }
     results
   }
 }
@@ -91,5 +97,6 @@ class CreateStream(node: ASTNode) extends StreamSQLDDLPlan {
 // in case we need to convert to physical plan?
 abstract class StreamSQLDDLPlan extends LogicalPlan {
   self: Product =>
-  abstract def execute() : Seq[String]
+  //TODO if it is possible to obtain catalog to Analyzer
+  abstract def execute(catalog: StreamSQLMetastoreCatalog) : Seq[String]
 }

@@ -33,11 +33,11 @@ class StreamSQLMetastoreCatalog (hive: HiveContext) extends HiveMetastoreCatalog
     }
   }
 
-  def createStream() = {
+  def createStream(createStreamDesc: CreateStreamDesc) = {
 
   }
 
-  def createStreamLike() = {
+  def createStreamLike(createStreamLikeDesc: CreateStreamLikeDesc) = {
 
   }
 

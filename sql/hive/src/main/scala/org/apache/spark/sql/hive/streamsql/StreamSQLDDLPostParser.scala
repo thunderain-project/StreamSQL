@@ -26,11 +26,9 @@ import java.util.List
 import org.apache.hadoop.hive.ql.plan.{CreateTableLikeDesc, DDLDesc, CreateTableDesc, DropTableDesc}
 import org.apache.hadoop.hive.ql.parse._
 import org.apache.hadoop.hive.metastore.api.FieldSchema
-import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer._
+import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer
 
 import scala.collection.JavaConversions._
-import org.apache.hadoop.hive.conf.HiveConf
-import org.apache.hadoop.hive.ql.metadata.{Hive, Table}
 
 trait BaseCreateStreamDesc extends DDLDesc {
   @BeanProperty
@@ -41,12 +39,13 @@ class CreateStreamDesc extends CreateTableDesc with BaseCreateStreamDesc {
   super.setExternal(true)
   super.getTblProps.put(streamProp._1, streamProp._2)
 }
+
 class CreateStreamLikeDesc extends CreateTableLikeDesc with BaseCreateStreamDesc {
   super.setExternal(true)
   super.getTblProps.put(streamProp._1, streamProp._2)
 }
 
-class StreamSQLDDLPostParser(hiveconf: HiveConf) extends BaseSemanticAnalyzer(hiveconf){
+object StreamSQLDDLPostParser {
 
   def analyzeDropStreamDesc(node: ASTNode):  DropTableDesc = {
     val dropTableDesc = new DropTableDesc()
@@ -60,15 +59,6 @@ class StreamSQLDDLPostParser(hiveconf: HiveConf) extends BaseSemanticAnalyzer(hi
 
 
   def analyzerCreateStreamDesc(node: ASTNode) = {
-    val tableName = BaseSemanticAnalyzer.getUnescapedName(node.getChild(0).asInstanceOf[ASTNode])
-    var likeTableName: String = null
-    var ifNotExists: Boolean = false
-    var creatStreamType: CreateStreamType.Value = CreateStreamType.CS
-    var cols: List[FieldSchema] = null
-    var comment: String = null
-    var location: String = null
-    val tblProps: Map[String, String] = new HashMap[String, String]
-
     object CreateStreamType extends Enumeration {
       type CreateStreamType = Value
       val CS, // standard create stream
@@ -77,6 +67,14 @@ class StreamSQLDDLPostParser(hiveconf: HiveConf) extends BaseSemanticAnalyzer(hi
       = Value
     }
 
+    val tableName = BaseSemanticAnalyzer.getUnescapedName(node.getChild(0).asInstanceOf[ASTNode])
+    var likeTableName: String = null
+    var ifNotExists: Boolean = false
+    var creatStreamType: CreateStreamType.Value = CreateStreamType.CS
+    var cols: List[FieldSchema] = null
+    var comment: String = null
+    var location: String = null
+    val tblProps: Map[String, String] = new HashMap[String, String]
 
     for (child:ASTNode <- node.getChildren ) {
       // Use token type instead of text to avoid some up-/low-case mismatch issues.
@@ -132,9 +130,19 @@ class StreamSQLDDLPostParser(hiveconf: HiveConf) extends BaseSemanticAnalyzer(hi
       creatStreamType match {
         case CreateStreamType.CS =>
           val csd = new CreateStreamDesc
-
+          csd.setCols(cols.asInstanceOf[ArrayList[FieldSchema]])
+          csd.setComment(comment)
+          csd.setTableName(tableName)
+          csd.setLocation(location)
+          tblProps.foreach(i => csd.getTblProps.put(i._1,i._2))
         case CreateStreamType.CSL =>
+          val csld = new CreateStreamLikeDesc
+          csld.setTableName(tableName)
+          csld.setLocation(location)
+          csld.setLikeTableName(likeTableName)
+          tblProps.foreach(i => csld.getTblProps.put(i._1,i._2))
         case CreateStreamType.CSAS =>
+          //todo
         case _ =>  throw new SemanticException("Unsupported command");
       }
 
