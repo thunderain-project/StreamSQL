@@ -110,14 +110,14 @@ object StreamSQLDDLPostParser {
           location = BaseSemanticAnalyzer.unescapeSQLString(child.getChild(0).getText)
         case HiveParser.TOK_TABLEPROPERTIES =>
           BaseSemanticAnalyzer.readProps(child.getChild(0).asInstanceOf[ASTNode], tblProps)
-        case HiveParser.TOK_TABLEROWFORMAT =>
-           //TODO
-        case HiveParser.TOK_TABLESERIALIZER =>
-           //TODO
-        case HiveParser.TOK_STORAGEHANDLER =>
-           //TODO
-        case HiveParser.TOK_TABLEFILEFORMAT =>
-           //TODO input/output class
+//        case HiveParser.TOK_TABLEROWFORMAT =>
+//           //TODO
+//        case HiveParser.TOK_TABLESERIALIZER =>
+//           //TODO
+//        case HiveParser.TOK_STORAGEHANDLER =>
+//           //TODO
+//        case HiveParser.TOK_TABLEFILEFORMAT =>
+//           //TODO input/output class
         case HiveParser.TOK_TABLEBUCKETS =>
           throw new NotImplementedError(s"Not support yet:\n ${HiveQl.dumpTree(child).toString} ")
         case HiveParser.TOK_TABLEPARTCOLS =>

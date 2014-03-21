@@ -260,7 +260,7 @@ class HiveContext(sc: SparkContext) extends SQLContext(sc) {
         case StreamSQLDDLCommand(plan) =>
            plan match {
              case ddl: streamsql.StreamSQLDDLPlan =>
-               val output = ddl.execute(catalog.asInstanceOf[StreamSQLMetastoreCatalog])
+               val output = ddl.execute(catalog)
                if (output.size == 0) {
                  emptyResult
                } else {
