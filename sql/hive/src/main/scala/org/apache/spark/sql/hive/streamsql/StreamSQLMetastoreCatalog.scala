@@ -27,7 +27,8 @@ import org.apache.hadoop.hive.metastore.TableType
 import org.apache.hadoop.hive.ql.session.SessionState
 
 
-class StreamSQLMetastoreCatalog (hive: HiveContext) extends HiveMetastoreCatalog(hive){
+class StreamSQLMetastoreCatalog (hive: HiveContext, catalog: HiveMetastoreCatalog) extends HiveMetastoreCatalog(hive){
+  override val client = catalog.client
 
   def dropStream(dropTbl: DropTableDesc) = {
     val tbl: Table = client.getTable(dropTbl.getTableName)
