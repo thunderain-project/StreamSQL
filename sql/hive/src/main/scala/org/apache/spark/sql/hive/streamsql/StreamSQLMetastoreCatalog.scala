@@ -29,16 +29,16 @@ import org.apache.hadoop.hive.ql.session.SessionState
 
 class StreamSQLMetastoreCatalog (hive: HiveContext) extends HiveMetastoreCatalog(hive) {
   def dropStream(dropTbl: DropTableDesc) = {
-    val tbl: Table = super.client.getTable(dropTbl.getTableName)
+    val tbl: Table = client.getTable(dropTbl.getTableName)
     // simply drop the table here
     if(tbl != null && tbl.canDrop) {
-       super.client.dropTable(dropTbl.getTableName)
+       client.dropTable(dropTbl.getTableName)
     }
   }
 
   //namespace decoration
   def createStream(createStreamDesc: CreateStreamDesc) = {
-    val tbl = super.client.newTable(createStreamDesc.getTableName)
+    val tbl = client.newTable(createStreamDesc.getTableName)
 
     if(createStreamDesc.getTblProps != null) {
       tbl.getTTable.getParameters.putAll(createStreamDesc.getTblProps)
@@ -61,16 +61,17 @@ class StreamSQLMetastoreCatalog (hive: HiveContext) extends HiveMetastoreCatalog
       tbl.setTableType(TableType.EXTERNAL_TABLE)
     }
 
-    tbl.setOwner(SessionState.getUserFromAuthenticator)
+    //todo
+    tbl.setOwner(SessionState.get().getAuthenticator().getUserName())
     tbl.setCreateTime((System.currentTimeMillis()/1000).toInt)
 
-    super.client.createTable(tbl, createStreamDesc.getIfNotExists)
+    client.createTable(tbl, createStreamDesc.getIfNotExists)
   }
 
   //namespace decoration
   def createStreamLike(createStreamLikeDesc: CreateStreamLikeDesc) = {
-    val tbl = super.client.getTable(createStreamLikeDesc.getLikeTableName)
-    val newTable = super.client.newTable(createStreamLikeDesc.getTableName)
+    val tbl = client.getTable(createStreamLikeDesc.getLikeTableName)
+    val newTable = client.newTable(createStreamLikeDesc.getTableName)
     tbl.setDbName(newTable.getDbName)
     tbl.setTableName(newTable.getTableName)
 
@@ -89,10 +90,12 @@ class StreamSQLMetastoreCatalog (hive: HiveContext) extends HiveMetastoreCatalog
       tbl.setProperty("EXTERNAL", "TRUE")
       tbl.setTableType(TableType.EXTERNAL_TABLE)
     }
-    tbl.setOwner(SessionState.getUserFromAuthenticator)
+
+    //todo
+    tbl.setOwner(SessionState.get().getAuthenticator().getUserName())
     tbl.setCreateTime((System.currentTimeMillis()/1000).toInt)
 
-    super.client.createTable(tbl, createStreamLikeDesc.getIfNotExists)
+    client.createTable(tbl, createStreamLikeDesc.getIfNotExists)
   }
 
 }

@@ -28,6 +28,8 @@ import org.apache.hadoop.hive.ql.parse._
 import org.apache.hadoop.hive.metastore.api.FieldSchema
 import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer
 
+import scala.reflect._
+
 import scala.collection.JavaConversions._
 
 trait BaseCreateStreamDesc extends DDLDesc {
@@ -58,7 +60,7 @@ object StreamSQLDDLPostParser {
   }
 
 
-  def analyzerCreateStreamDesc(node: ASTNode) = {
+  def analyzerCreateStreamDesc(node: ASTNode): BaseCreateStreamDesc = {
     object CreateStreamType extends Enumeration {
       type CreateStreamType = Value
       val CS, // standard create stream
@@ -76,7 +78,8 @@ object StreamSQLDDLPostParser {
     var location: String = null
     val tblProps: Map[String, String] = new HashMap[String, String]
 
-    for (child:ASTNode <- node.getChildren ) {
+    for (cnode <- node.getChildren ) {
+      val child = cnode.asInstanceOf[ASTNode]
       // Use token type instead of text to avoid some up-/low-case mismatch issues.
       child.getToken.getType match {
         case HiveParser.TOK_IFNOTEXISTS => ifNotExists = true
@@ -126,26 +129,30 @@ object StreamSQLDDLPostParser {
         case _ =>
           throw new AssertionError("Unknow token: " + child.getToken)
       }
+    }
 
-      creatStreamType match {
-        case CreateStreamType.CS =>
-          val csd = new CreateStreamDesc
-          csd.setCols(cols.asInstanceOf[ArrayList[FieldSchema]])
-          csd.setComment(comment)
-          csd.setTableName(tableName)
-          csd.setLocation(location)
-          tblProps.foreach(i => csd.getTblProps.put(i._1,i._2))
-        case CreateStreamType.CSL =>
-          val csld = new CreateStreamLikeDesc
-          csld.setTableName(tableName)
-          csld.setLocation(location)
-          csld.setLikeTableName(likeTableName)
-          tblProps.foreach(i => csld.getTblProps.put(i._1,i._2))
-        case CreateStreamType.CSAS =>
-          //todo
-        case _ =>  throw new SemanticException("Unsupported command");
-      }
-
+    creatStreamType match {
+      case CreateStreamType.CS =>
+        val csd = new CreateStreamDesc
+        csd.setCols(cols.asInstanceOf[ArrayList[FieldSchema]])
+        csd.setComment(comment)
+        csd.setTableName(tableName)
+        csd.setLocation(location)
+        tblProps.foreach(i => csd.getTblProps.put(i._1,i._2))
+        csd
+      case CreateStreamType.CSL =>
+        val csld = new CreateStreamLikeDesc
+        csld.setTableName(tableName)
+        csld.setLocation(location)
+        csld.setLikeTableName(likeTableName)
+        tblProps.foreach(i => csld.getTblProps.put(i._1,i._2))
+        csld
+      case CreateStreamType.CSAS =>
+        //todo
+        val csd = new CreateStreamDesc
+        csd
+      case _ =>
+        throw new SemanticException("Unsupported command");
 
     }
 

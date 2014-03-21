@@ -20,15 +20,16 @@ package hive
 package streamsql
 
 import scala.collection.JavaConversions._
+import java.util.{ArrayList => JArrayList}
 
 import org.apache.hadoop.hive.ql.lib.Node
 import org.apache.hadoop.hive.ql.parse._
 
 import org.apache.spark.sql.catalyst.plans.logical._
+import org.apache.spark.sql.catalyst.expressions.Attribute
 
 
 object StreamQl {
-
   //all supported TOK
   val streamSqlDdlCommands = Seq(
     //TODO alter stream related
@@ -72,7 +73,7 @@ object StreamQl {
   }
 }
 
-class DropStream(node: ASTNode) extends StreamSQLDDLPlan {
+case class DropStream(node: ASTNode) extends StreamSQLDDLPlan {
   def execute(catalog: StreamSQLMetastoreCatalog): Seq[String] = {
     //TODO
     val results = new JArrayList[String]
@@ -82,11 +83,11 @@ class DropStream(node: ASTNode) extends StreamSQLDDLPlan {
   }
 }
 
-class CreateStream(node: ASTNode) extends StreamSQLDDLPlan {
+case class CreateStream(node: ASTNode) extends StreamSQLDDLPlan {
   def execute(catalog: StreamSQLMetastoreCatalog): Seq[String] = {
     //TODO
     val results = new JArrayList[String]
-    StreamSQLDDLPostParser.analyzeDropStreamDesc(node) match {
+    StreamSQLDDLPostParser.analyzerCreateStreamDesc(node) match {
       case csd: CreateStreamDesc =>  catalog.createStream(csd)
       case csld: CreateStreamLikeDesc => catalog.createStreamLike(csld)
     }
@@ -98,5 +99,22 @@ class CreateStream(node: ASTNode) extends StreamSQLDDLPlan {
 abstract class StreamSQLDDLPlan extends LogicalPlan {
   self: Product =>
   //TODO if it is possible to obtain catalog to Analyzer
-  abstract def execute(catalog: StreamSQLMetastoreCatalog) : Seq[String]
+  def execute(catalog: StreamSQLMetastoreCatalog) : Seq[String]
+
+  /** Returns a Seq of the children of this node */
+  def children: Seq[LogicalPlan] = ???
+
+  def productElement(n: Int): Any = ???
+
+  def productArity: Int = ???
+
+  /**
+   * Returns the set of attributes that are referenced by this node
+   * during evaluation.
+   */
+  def references: Set[Attribute] = ???
+
+  def canEqual(that: Any): Boolean = ???
+
+  def output: Seq[Attribute] = ???
 }
