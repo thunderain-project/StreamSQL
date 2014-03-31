@@ -15,18 +15,22 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.execution
+package org.apache.spark.sql
 
+import org.apache.spark.SparkContext
+
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.planning._
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.parquet._
+import org.apache.spark.sql.catalyst.plans.physical._
 
-private[sql] abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
-  self: SQLContext#SparkPlanner =>
+abstract class StrategiesFactory[T <: QueryPlan[T]] extends QueryPlanner[T] {
+  val sparkContext: SparkContext
+  val factory: StrategyFactory[T]
 
-  object HashJoin extends Strategy {
-    def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+  object SparkEquiInnerJoin extends Strategy {
+    def apply(plan: LogicalPlan): Seq[T] = plan match {
       case FilteredOperation(predicates, logical.Join(left, right, Inner, condition)) =>
         logger.debug(s"Considering join: ${predicates ++ condition}")
         // Find equi-join predicates that can be evaluated before the join, and thus can be used
@@ -48,12 +52,12 @@ private[sql] abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
           val leftKeys = joinKeys.map(_._1)
           val rightKeys = joinKeys.map(_._2)
 
-          val joinOp = execution.HashJoin(
-            leftKeys, rightKeys, BuildRight, planLater(left), planLater(right))
+          val joinOp = factory.equiInnerJoin(
+            leftKeys, rightKeys, planLater(left), planLater(right))
 
           // Make sure other conditions are met if present.
           if (otherPredicates.nonEmpty) {
-            execution.Filter(combineConjunctivePredicates(otherPredicates), joinOp) :: Nil
+            factory.filter(combineConjunctivePredicates(otherPredicates), joinOp) :: Nil
           } else {
             joinOp :: Nil
           }
@@ -73,7 +77,7 @@ private[sql] abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   }
 
   object PartialAggregation extends Strategy {
-    def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+    def apply(plan: LogicalPlan): Seq[T] = plan match {
       case logical.Aggregate(groupingExpressions, aggregateExpressions, child) =>
         // Collect all aggregate expressions.
         val allAggregates =
@@ -110,15 +114,15 @@ private[sql] abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
              partialEvaluations.values.flatMap(_.partialEvaluations)).toSeq
 
           // Construct two phased aggregation.
-          execution.Aggregate(
+          factory.aggregate(
             partial = false,
             namedGroupingExpressions.values.map(_.toAttribute).toSeq,
             rewrittenAggregateExpressions,
-            execution.Aggregate(
+            factory.aggregate(
               partial = true,
               groupingExpressions,
               partialComputation,
-              planLater(child))(sparkContext))(sparkContext) :: Nil
+              planLater(child))) :: Nil
         } else {
           Nil
         }
@@ -127,21 +131,21 @@ private[sql] abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   }
 
   object BroadcastNestedLoopJoin extends Strategy {
-    def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+    def apply(plan: LogicalPlan): Seq[T] = plan match {
       case logical.Join(left, right, joinType, condition) =>
-        execution.BroadcastNestedLoopJoin(
-          planLater(left), planLater(right), joinType, condition)(sparkContext) :: Nil
+        factory.broadcastNestedLoopJoin(
+          planLater(left), planLater(right), joinType, condition) :: Nil
       case _ => Nil
     }
   }
 
   object CartesianProduct extends Strategy {
-    def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+    def apply(plan: LogicalPlan): Seq[T] = plan match {
       case logical.Join(left, right, _, None) =>
-        execution.CartesianProduct(planLater(left), planLater(right)) :: Nil
+        factory.cartesianProduct(planLater(left), planLater(right)) :: Nil
       case logical.Join(left, right, Inner, Some(condition)) =>
-        execution.Filter(condition,
-          execution.CartesianProduct(planLater(left), planLater(right))) :: Nil
+        factory.filter(condition,
+          factory.cartesianProduct(planLater(left), planLater(right))) :: Nil
       case _ => Nil
     }
   }
@@ -155,70 +159,54 @@ private[sql] abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
     case other => other
   }
 
-  object TakeOrdered extends Strategy {
-    def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
-      case logical.Limit(IntegerLiteral(limit), logical.Sort(order, child)) =>
-        execution.TakeOrdered(limit, order, planLater(child))(sparkContext) :: Nil
+  object TopK extends Strategy {
+    def apply(plan: LogicalPlan): Seq[T] = plan match {
+      case logical.StopAfter(IntegerLiteral(limit), logical.Sort(order, child)) =>
+        factory.topK(limit, order, planLater(child)) :: Nil
       case _ => Nil
     }
   }
 
-  object ParquetOperations extends Strategy {
-    def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
-      // TODO: need to support writing to other types of files.  Unify the below code paths.
-      case logical.WriteToFile(path, child) =>
-        val relation =
-          ParquetRelation.create(path, child, sparkContext.hadoopConfiguration)
-        InsertIntoParquetTable(relation, planLater(child), overwrite=true)(sparkContext) :: Nil
-      case logical.InsertIntoTable(table: ParquetRelation, partition, child, overwrite) =>
-        InsertIntoParquetTable(table, planLater(child), overwrite)(sparkContext) :: Nil
-      case PhysicalOperation(projectList, filters, relation: ParquetRelation) =>
-        // TODO: Should be pushing down filters as well.
-        pruneFilterProject(
-          projectList,
-          filters,
-          ParquetTableScan(_, relation, None)(sparkContext)) :: Nil
-      case _ => Nil
-    }
-  }
-
-  object SparkSpecificStrategies extends Strategy {
-    def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+  // Can we automate these 'pass through' operations?
+  object BasicOperators extends Strategy {
+    // TOOD: Set
+    val numPartitions = 200
+    def apply(plan: LogicalPlan): Seq[T] = plan match {
       case logical.Distinct(child) =>
-        execution.Aggregate(
-          partial = false, child.output, child.output, planLater(child))(sparkContext) :: Nil
+        factory.aggregate(
+          partial = false, child.output, child.output, planLater(child)) :: Nil
       case logical.Sort(sortExprs, child) =>
         // This sort is a global sort. Its requiredDistribution will be an OrderedDistribution.
-        execution.Sort(sortExprs, global = true, planLater(child)):: Nil
+        factory.sort(sortExprs, global = true, planLater(child)):: Nil
       case logical.SortPartitions(sortExprs, child) =>
         // This sort only sorts tuples within a partition. Its requiredDistribution will be
         // an UnspecifiedDistribution.
-        execution.Sort(sortExprs, global = false, planLater(child)) :: Nil
-      case logical.Project(projectList, child) =>
-        execution.Project(projectList, planLater(child)) :: Nil
+        factory.sort(sortExprs, global = false, planLater(child)) :: Nil
+    case logical.Project(projectList, child) =>
+      factory.project(projectList, planLater(child)) :: Nil
       case logical.Filter(condition, child) =>
-        execution.Filter(condition, planLater(child)) :: Nil
+        factory.filter(condition, planLater(child)) :: Nil
       case logical.Aggregate(group, agg, child) =>
-        execution.Aggregate(partial = false, group, agg, planLater(child))(sparkContext) :: Nil
+        factory.aggregate(partial = false, group, agg, planLater(child)) :: Nil
       case logical.Sample(fraction, withReplacement, seed, child) =>
-        execution.Sample(fraction, withReplacement, seed, planLater(child)) :: Nil
+        factory.sample(fraction, withReplacement, seed, planLater(child)) :: Nil
       case logical.LocalRelation(output, data) =>
         val dataAsRdd =
           sparkContext.parallelize(data.map(r =>
             new GenericRow(r.productIterator.map(convertToCatalyst).toArray): Row))
-        execution.ExistingRdd(output, dataAsRdd) :: Nil
-      case logical.Limit(IntegerLiteral(limit), child) =>
-        execution.Limit(limit, planLater(child))(sparkContext) :: Nil
+        factory.existingData(output, dataAsRdd) :: Nil
+      case logical.StopAfter(IntegerLiteral(limit), child) =>
+        factory.stopAfter(limit, planLater(child)) :: Nil
       case Unions(unionChildren) =>
-        execution.Union(unionChildren.map(planLater))(sparkContext) :: Nil
+        factory.union(unionChildren.map(planLater)) :: Nil
       case logical.Generate(generator, join, outer, _, child) =>
-        execution.Generate(generator, join = join, outer = outer, planLater(child)) :: Nil
+        factory.generate(generator, join = join, outer = outer, planLater(child)) :: Nil
       case logical.NoRelation =>
-        execution.ExistingRdd(Nil, singleRowRdd) :: Nil
+        factory.existingData(Nil, singleRowRdd) :: Nil
       case logical.Repartition(expressions, child) =>
-        execution.Exchange(HashPartitioning(expressions, numPartitions), planLater(child)) :: Nil
-      case SparkLogicalPlan(existingPlan) => existingPlan :: Nil
+        factory.exchange(HashPartitioning(expressions, numPartitions), planLater(child)) :: Nil
       case _ => Nil
     }
   }
 }
+

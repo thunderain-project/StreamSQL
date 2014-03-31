@@ -194,7 +194,8 @@ class SQLContext(@transient val sparkContext: SparkContext)
       ParquetOperations ::
       BasicOperators ::
       CartesianProduct ::
-      BroadcastNestedLoopJoin :: Nil
+      BroadcastNestedLoopJoin ::
+      SparkSpecificStrategies :: Nil
 
     /**
      * Used to build table scan operators where complex projection and filtering are done using
