@@ -276,7 +276,7 @@ abstract class DStream[T: ClassTag] (
    * Retrieve a precomputed RDD of this DStream, or computes the RDD. This is an internal
    * method that should not be called directly.
    */
-  private[streaming] def getOrCompute(time: Time): Option[RDD[T]] = {
+  private[spark] def getOrCompute(time: Time): Option[RDD[T]] = {
     // If this DStream was not initialized (i.e., zeroTime not set), then do it
     // If RDD was already generated, then retrieve it from HashMap
     generatedRDDs.get(time) match {
