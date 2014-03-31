@@ -1,121 +1,85 @@
-# Apache Spark
+StreamSQL
+===
 
-Lightning-Fast Cluster Computing - <http://spark.apache.org/>
+StreamSQL is a Spark component based on [Catalyst](https://github.com/apache/spark/tree/master/sql) and [Spark Streaming](https://github.com/apache/spark/tree/master/streaming), aiming to support SQL-style queries on data streams. Our target is to advance the progress of Catalyst as well as Spark Streaming by bridging the gap between structured data queries and stream processing.
 
+Our StreamSQL provides:
 
-## Online Documentation
+1. Full SQL support on streaming data and extended time-based aggregation and join.
+2. Easy mutual operation between DStream and SQL.
+3. Table and stream mutual operation with a simple query.
 
-You can find the latest Spark documentation, including a programming
-guide, on the project webpage at <http://spark.apache.org/documentation.html>.
-This README file only contains basic setup instructions.
+### An Example ###
 
+**Creating StreamSQLContext**
 
-## Building Spark
+`StreamSQLContext` is the entry point for all DStream related functionalities. It is the counterpart of `SQLContext` for Spark. `StreamingContext` can be created as below.
 
-Spark is built on Scala 2.10. To build Spark and its example programs, run:
+    val ssc: StreamingContext
+    val streamSqlContext = new StreamSQLContext(ssc)
 
-    ./sbt/sbt assembly
+    import streamSqlContext._
 
-## Interactive Scala Shell
+**Running SQL on DStreams:**
 
-The easiest way to start using Spark is through the Scala shell:
+    case class Person(name: String, age: String)
 
-    ./bin/spark-shell
+    // Create an DStream of Person objects and register it as a stream.
+    val people: DStream[Person] = ssc.socketTextStream(serverIP, serverPort)
+      .map(_.split(","))
+      .map(p => Person(p(0), p(1).toInt))
 
-Try the following command, which should return 1000:
+    people.registerAsStream("people")
 
-    scala> sc.parallelize(1 to 1000).count()
+    val teenagers = sql("SELECT name FROM people WHERE age >= 10 && age <= 19")
 
-## Interactive Python Shell
+    // The results of SQL queries are themselves DStreams and support all the normal operations
+    teenagers.map(t => "Name: " + t(0)).print()
+    ssc.start()
+    ssc.awaitTermination()
+    ssc.stop()
 
-Alternatively, if you prefer Python, you can use the Python shell:
+**Join Stream with Table**
 
-    ./bin/pyspark
-    
-And run the following command, which should also return 1000:
+    val sqlContext = streamSqlContext.sqlContext
 
-    >>> sc.parallelize(range(1000)).count()
+    val historyData = sc.textFile("persons").map(_.split(",")).map(p => Person(p(0), p(1).toInt))
+    val schemaData = sqlContext.createSchemaRDD(historyData)
+    schemaData.registerAsTable("records")
 
-## Example Programs
+    val result = sql("SELECT * FROM records JOIN people ON people.name = records.name")
+    result.print()
+    ssc.start()
+    ssc.awaitTermination()
+    ssc.stop()
 
-Spark also comes with several sample programs in the `examples` directory.
-To run one of them, use `./bin/run-example <class> <params>`. For example:
+**Writing Language Integrated Relational Queries:**
 
-    ./bin/run-example org.apache.spark.examples.SparkLR local[2]
+    val teenagers = people.where('age >= 10).where('age <= 19).select('name).toDstream
 
-will run the Logistic Regression example locally on 2 CPUs.
+**Combining Hive** (to be implemented)
 
-Each of the example programs prints usage help if no params are given.
+    val ssc: StreamingContext
+    val streamHiveContext = new StreamHiveContext(ssc)
 
-All of the Spark samples take a `<master>` parameter that is the cluster URL
-to connect to. This can be a mesos:// or spark:// URL, or "local" to run
-locally with one thread, or "local[N]" to run locally with N threads.
+    import streamHiveContext._
 
-## Running Tests
+    sql("CREATE STREAM IF NOT EXISTS src (key INT, value STRING) LOCATION socket://host:port")
 
-Testing first requires [building Spark](#building-spark). Once Spark is built, tests
-can be run using:
+    sql("SELECT key, value FROM src").print()
+    ssc.start()
+    ssc.awaitTermination()
+    ssc.stop()
 
-    ./sbt/sbt test
+### How To Build and Deploy ###
 
-## A Note About Hadoop Versions
+StreamSQL is fully based on [Spark](http://spark.apache.org/), to build and deploy please refer to
+[Spark document](http://spark.apache.org/documentation.html).
 
-Spark uses the Hadoop core library to talk to HDFS and other Hadoop-supported
-storage systems. Because the protocols have changed in different versions of
-Hadoop, you must build Spark against the same version that your cluster runs.
-You can change the version by setting the `SPARK_HADOOP_VERSION` environment
-when building Spark.
+### Future List ###
 
-For Apache Hadoop versions 1.x, Cloudera CDH MRv1, and other Hadoop
-versions without YARN, use:
+1. Build a end-to-end SQL based Streaming processing with Hive MetaStore supported.
+2. Support time-based window slicing on data.
+3. Create a uniform input stream format and output stream format.
 
-    # Apache Hadoop 1.2.1
-    $ SPARK_HADOOP_VERSION=1.2.1 sbt/sbt assembly
-
-    # Cloudera CDH 4.2.0 with MapReduce v1
-    $ SPARK_HADOOP_VERSION=2.0.0-mr1-cdh4.2.0 sbt/sbt assembly
-
-For Apache Hadoop 2.2.X, 2.1.X, 2.0.X, 0.23.x, Cloudera CDH MRv2, and other Hadoop versions
-with YARN, also set `SPARK_YARN=true`:
-
-    # Apache Hadoop 2.0.5-alpha
-    $ SPARK_HADOOP_VERSION=2.0.5-alpha SPARK_YARN=true sbt/sbt assembly
-
-    # Cloudera CDH 4.2.0 with MapReduce v2
-    $ SPARK_HADOOP_VERSION=2.0.0-cdh4.2.0 SPARK_YARN=true sbt/sbt assembly
-
-    # Apache Hadoop 2.2.X and newer
-    $ SPARK_HADOOP_VERSION=2.2.0 SPARK_YARN=true sbt/sbt assembly
-
-When developing a Spark application, specify the Hadoop version by adding the
-"hadoop-client" artifact to your project's dependencies. For example, if you're
-using Hadoop 1.2.1 and build your application using SBT, add this entry to
-`libraryDependencies`:
-
-    "org.apache.hadoop" % "hadoop-client" % "1.2.1"
-
-If your project is built with Maven, add this to your POM file's `<dependencies>` section:
-
-    <dependency>
-      <groupId>org.apache.hadoop</groupId>
-      <artifactId>hadoop-client</artifactId>
-      <version>1.2.1</version>
-    </dependency>
-
-
-## Configuration
-
-Please refer to the [Configuration guide](http://spark.apache.org/docs/latest/configuration.html)
-in the online documentation for an overview on how to configure Spark.
-
-
-## Contributing to Spark
-
-Contributions via GitHub pull requests are gladly accepted from their original
-author. Along with any pull requests, please state that the contribution is
-your original work and that you license the work to the project under the
-project's open source license. Whether or not you state this explicitly, by
-submitting any copyrighted material via pull request, email, or other means
-you agree to license the material under the project's open source license and
-warrant that you have the legal authority to do so.
-
+Details please refer to [design document](https://github.com/thunderain-project/StreamSQL/wiki/StreamSQL-Design-Document).
