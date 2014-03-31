@@ -22,4 +22,5 @@ abstract class BaseRelation extends LeafNode {
 
   def tableName: String
   def isPartitioned: Boolean = false
+  def isStream: Boolean = false
 }
