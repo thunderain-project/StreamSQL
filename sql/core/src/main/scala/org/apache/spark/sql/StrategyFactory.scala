@@ -8,6 +8,7 @@ import org.apache.spark.streaming.dstream.ConstantInputDStream
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.physical._
+import org.apache.spark.sql.execution.BuildSide
 
 trait StrategyFactory[T <: QueryPlan[T]] {
 
@@ -19,7 +20,7 @@ trait StrategyFactory[T <: QueryPlan[T]] {
   val topK: TopK[T]
   val sort: Sort[T]
   val existingData: ExistingData[T]
-  val equiInnerJoin: EquiInnerJoin[T]
+  val hashJoin: HashJoin[T]
   val cartesianProduct: CartesianProduct[T]
   val broadcastNestedLoopJoin: BroadcastNestedLoopJoin[T]
   val aggregate: Aggregate[T]
@@ -44,8 +45,9 @@ trait StrategyFactory[T <: QueryPlan[T]] {
 
   trait ExistingData[T] { def apply(output: Seq[Attribute], rdd: RDD[Row]): T }
 
-  trait EquiInnerJoin[T] {
-    def apply(leftKeys: Seq[Expression], rightKeys: Seq[Expression], left: T, right: T): T
+  trait HashJoin[T] {
+    def apply(leftKeys: Seq[Expression], rightKeys: Seq[Expression], buildSide: BuildSide,
+              left: T, right: T): T
   }
 
   trait CartesianProduct[T] { def apply(left: T, right: T): T }
@@ -77,7 +79,7 @@ class SparkStrategyFactory(sc: SparkContext)
   val topK = new SparkTopK
   val sort = new SparkSort
   val existingData = new SparkExistingData
-  val equiInnerJoin = new SparkEquiInnerJoin
+  val hashJoin = new SparkHashJoin
   val cartesianProduct = new SparkCartesianProduct
   val broadcastNestedLoopJoin = new SparkBroadcastNestedLoopJoin
   val aggregate = new SparkAggregate
@@ -123,10 +125,10 @@ class SparkStrategyFactory(sc: SparkContext)
     def apply(output: Seq[Attribute], rdd: RDD[Row]) = execution.ExistingRdd(output, rdd)
   }
 
-  class SparkEquiInnerJoin extends EquiInnerJoin[execution.SparkPlan] {
-    def apply(leftKeys: Seq[Expression], rightKeys: Seq[Expression], left: execution.SparkPlan,
-        right: execution.SparkPlan) =
-      execution.SparkEquiInnerJoin(leftKeys, rightKeys, left, right)
+  class SparkHashJoin extends HashJoin[execution.SparkPlan] {
+    def apply(leftKeys: Seq[Expression], rightKeys: Seq[Expression], buildSide: BuildSide,
+        left: execution.SparkPlan, right: execution.SparkPlan) =
+      execution.HashJoin(leftKeys, rightKeys, buildSide, left, right)
   }
 
   class SparkCartesianProduct extends CartesianProduct[execution.SparkPlan] {
@@ -168,7 +170,7 @@ class StreamStrategyFactory(ssc: StreamingContext)
   val topK = new StreamTopK
   val sort = new StreamSort
   val existingData = new StreamExistingData
-  val equiInnerJoin = new StreamEquiInnerJoin
+  val hashJoin = new StreamHashJoin
   val cartesianProduct = new StreamCartesianProduct
   val broadcastNestedLoopJoin = new StreamBroadcastNestedLoopJoin
   val aggregate = new StreamAggregate
@@ -216,10 +218,10 @@ class StreamStrategyFactory(ssc: StreamingContext)
     }
   }
 
-  class StreamEquiInnerJoin extends EquiInnerJoin[stream.StreamPlan] {
-    def apply(leftKeys: Seq[Expression], rightKeys: Seq[Expression], left: stream.StreamPlan,
-        right: stream.StreamPlan) =
-      stream.StreamEqualInnerJoin(leftKeys, rightKeys, left, right)
+  class StreamHashJoin extends HashJoin[stream.StreamPlan] {
+    def apply(leftKeys: Seq[Expression], rightKeys: Seq[Expression], buildSide: BuildSide,
+        left: stream.StreamPlan, right: stream.StreamPlan) =
+      stream.StreamHashJoin(leftKeys, rightKeys, buildSide, left, right)
   }
 
   class StreamCartesianProduct extends CartesianProduct[stream.StreamPlan] {

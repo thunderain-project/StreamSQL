@@ -24,12 +24,13 @@ import org.apache.spark.sql.catalyst.planning._
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.physical._
+import org.apache.spark.sql.execution.BuildRight
 
 abstract class StrategiesFactory[T <: QueryPlan[T]] extends QueryPlanner[T] {
   val sparkContext: SparkContext
   val factory: StrategyFactory[T]
 
-  object SparkEquiInnerJoin extends Strategy {
+  object HashJoin extends Strategy {
     def apply(plan: LogicalPlan): Seq[T] = plan match {
       case FilteredOperation(predicates, logical.Join(left, right, Inner, condition)) =>
         logger.debug(s"Considering join: ${predicates ++ condition}")
@@ -52,8 +53,8 @@ abstract class StrategiesFactory[T <: QueryPlan[T]] extends QueryPlanner[T] {
           val leftKeys = joinKeys.map(_._1)
           val rightKeys = joinKeys.map(_._2)
 
-          val joinOp = factory.equiInnerJoin(
-            leftKeys, rightKeys, planLater(left), planLater(right))
+          val joinOp = factory.hashJoin(
+            leftKeys, rightKeys, BuildRight, planLater(left), planLater(right))
 
           // Make sure other conditions are met if present.
           if (otherPredicates.nonEmpty) {

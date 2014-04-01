@@ -61,7 +61,7 @@ class StreamSQLContext(@transient val streamingContext: StreamingContext)
     val strategies: Seq[Strategy] =
       TopK ::
       PartialAggregation ::
-      SparkEquiInnerJoin ::
+      HashJoin ::
       BasicOperators ::
       CartesianProduct ::
       BroadcastNestedLoopJoin ::

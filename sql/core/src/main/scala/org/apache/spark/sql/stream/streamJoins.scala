@@ -24,14 +24,15 @@ import org.apache.spark.streaming.StreamingContext
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
 
-case class StreamEqualInnerJoin(
+case class StreamHashJoin(
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
+    buildSide: execution.BuildSide,
     left: StreamPlan,
     right: StreamPlan)
   extends BinaryNode {
 
-  lazy val sparkPlan = execution.SparkEquiInnerJoin(leftKeys, rightKeys, left.sparkPlan,
+  lazy val sparkPlan = execution.HashJoin(leftKeys, rightKeys, buildSide, left.sparkPlan,
     right.sparkPlan)
 
   def output = left.output ++ right.output
