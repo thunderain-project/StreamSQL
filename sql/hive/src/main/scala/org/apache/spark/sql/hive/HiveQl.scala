@@ -31,8 +31,6 @@ import org.apache.spark.sql.catalyst.types._
 /* Implicit conversions */
 import scala.collection.JavaConversions._
 
-import com.intel.ssg.dcst.panthera.parse.sql.SqlParseDriver
-
 /**
  * Used when we need to start parsing the AST before deciding that we are going to pass the command
  * back for Hive to execute natively.  Will be replaced with a native command that contains the
@@ -204,7 +202,7 @@ private[hive] object HiveQl {
   /**
    * Returns the AST for the given SQL string.
    */
-  def getAst(sql: String): ASTNode = ParseUtils.findRootNonNullToken((new SqlParseDriver).parse(sql))
+  def getAst(sql: String): ASTNode = ParseUtils.findRootNonNullToken((new ParseDriver).parse(sql))
 
   /** Returns a LogicalPlan for a given HiveQL string. */
   def parseSql(sql: String): LogicalPlan = {
@@ -226,8 +224,8 @@ private[hive] object HiveQl {
 
         if (nativeCommands contains tree.getText) {
           NativeCommand(sql)
-        } else if(streamsql.StreamQl.streamSqlDdlCommands contains tree.getText) {
-          streamsql.StreamQl.nodeToPlan(tree)
+        } else if(stream.StreamQl.streamDdlCommands contains tree.getText) {
+          stream.StreamQl.nodeToPlan(tree)
         } else {
           nodeToPlan(tree) match {
             case NativePlaceholder => NativeCommand(sql)
@@ -244,7 +242,7 @@ private[hive] object HiveQl {
     val tree =
       try {
         ParseUtils.findRootNonNullToken(
-          (new SqlParseDriver).parse(ddl, null /* no context required for parsing alone */))
+          (new ParseDriver).parse(ddl, null /* no context required for parsing alone */))
       } catch {
         case pe: org.apache.hadoop.hive.ql.parse.ParseException =>
           throw new RuntimeException(s"Failed to parse ddl: '$ddl'", pe)

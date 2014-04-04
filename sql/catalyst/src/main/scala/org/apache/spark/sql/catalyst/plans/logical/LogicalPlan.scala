@@ -110,7 +110,6 @@ abstract class Command extends LeafNode {
  */
 case class NativeCommand(cmd: String) extends Command
 
-case class StreamSQLDDLCommand(plan: LogicalPlan) extends Command
 /**
  * Returned by a parser when the users only wants to see what query plan would be executed, without
  * actually performing the execution.

@@ -43,7 +43,6 @@ import org.apache.spark.sql.execution._
 
 /* Implicit conversions */
 import scala.collection.JavaConversions._
-import org.apache.spark.sql.hive.streamsql.StreamSQLMetastoreCatalog
 
 /**
  * Starts up an instance of hive where metadata is stored locally. An in-process metadata data is
@@ -257,18 +256,6 @@ class HiveContext(sc: SparkContext) extends SQLContext(sc) {
             val asRows = output.map(r => new GenericRow(r.split("\t").asInstanceOf[Array[Any]]))
             sparkContext.parallelize(asRows, 1)
           }
-        case StreamSQLDDLCommand(plan) =>
-           plan match {
-             case ddl: streamsql.StreamSQLDDLPlan =>
-               val output = ddl.execute(streamcatalog)
-               if (output.size == 0) {
-                 emptyResult
-               } else {
-                 val asRows = output.map(r => new GenericRow(r.split("\t").asInstanceOf[Array[Any]]))
-                 sparkContext.parallelize(asRows, 1)
-               }
-             case _ => emptyResult
-           }
         case _ =>
           executedPlan.execute().map(_.copy())
       }

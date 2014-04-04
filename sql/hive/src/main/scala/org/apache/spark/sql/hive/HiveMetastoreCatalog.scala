@@ -240,6 +240,8 @@ private[hive] case class MetastoreRelation
   // org.apache.hadoop.hive.ql.metadata.Partition will cause a NotSerializableException
   // which indicates the SerDe we used is not Serializable.
 
+  override def isStream = hiveQlTable.getProperty("STREAM") == "TRUE"
+
   def hiveQlTable = new Table(table)
 
   def hiveQlPartitions = partitions.map { p =>
