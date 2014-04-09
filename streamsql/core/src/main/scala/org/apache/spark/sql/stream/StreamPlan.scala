@@ -15,17 +15,17 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql
-package stream
+package org.apache.spark.sql.stream
 
+import org.apache.spark.rdd.RDD
 import org.apache.spark.streaming.dstream.DStream
 
+import org.apache.spark.sql.{Logging, Row}
 import org.apache.spark.sql.catalyst.trees
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical
 import org.apache.spark.sql.catalyst.plans.physical._
-
-import execution.SparkPlan
+import org.apache.spark.sql.execution.SparkPlan
 
 abstract class StreamPlan extends QueryPlan[StreamPlan] with Logging {
   self: Product =>
@@ -52,8 +52,11 @@ trait LeafNode extends StreamPlan with trees.LeafNode[StreamPlan] {
 
 trait UnaryNode extends StreamPlan with trees.UnaryNode[StreamPlan] {
   self: Product =>
+  def execute() = child.execute().transform(_ => sparkPlan.execute())
 }
 
 trait BinaryNode extends StreamPlan with trees.BinaryNode[StreamPlan] {
   self: Product =>
+  def execute() = left.execute().transformWith(right.execute(),
+    (l: RDD[Row], r: RDD[Row]) => sparkPlan.execute())
 }

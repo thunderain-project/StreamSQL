@@ -24,11 +24,10 @@ import scala.collection.JavaConversions._
 import org.apache.hadoop.hive.metastore.api.FieldSchema
 import org.apache.hadoop.hive.ql.lib.Node
 import org.apache.hadoop.hive.ql.parse._
-import org.apache.hadoop.hive.ql.plan.{CreateStreamDesc, DropStreamDesc}
 
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.hive.HiveQl
-import org.apache.spark.sql.hive.HiveQl.Token
+import org.apache.spark.sql.hive.HiveQl.{ParseException, Token}
 
 object StreamQl {
   //all supported TOK
@@ -54,6 +53,24 @@ object StreamQl {
     //drop stream related
     "TOK_DROPSTREAM"
   )
+
+  def parseSql(sql: String): LogicalPlan = {
+    try {
+      HiveQl.parseSql(sql)
+    } catch {
+      case _: Exception =>
+        try {
+          val tree = HiveQl.getAst(sql)
+          if (streamDdlCommands contains tree.getText) {
+            nodeToPlan(tree)
+          } else {
+            throw new NotImplementedError(sql)
+          }
+        } catch {
+          case e: Exception => throw new ParseException(sql, e)
+        }
+    }
+  }
 
   def nodeToPlan(node: Node): LogicalPlan = node match {
     case Token("TOK_CREATESTREAM", children) =>
@@ -104,7 +121,8 @@ object StreamQl {
         case Seq(dbName, streamName) => (Some(dbName), streamName)
       }
 
-      val createStreamDesc = new CreateStreamDesc(streamName, db)
+      val createStreamDesc = new CreateStreamDesc
+      createStreamDesc.setTableName(s"${db.getOrElse("")}.${streamName}")
       createStreamDesc.setIfNotExists(ifNotExisted.isDefined)
 
       comment.foreach { case Token("TOK_TABLECOMMENT", Token(c, Nil) :: Nil) => createStreamDesc
@@ -203,7 +221,7 @@ object StreamQl {
       val (Some(streamNameParts) :: ifExisted :: Nil) =
         HiveQl.getClauses(Seq("TOK_TABNAME", "TOK_IFEXISTS"), children)
 
-      val (_, streamName) = streamNameParts.getChildren.map { case Token(part, Nil) =>
+      val (db, streamName) = streamNameParts.getChildren.map { case Token(part, Nil) =>
         HiveQl.cleanIdentifier(part)
       } match {
         case Seq(streamOnly) => (None, streamOnly)
@@ -212,7 +230,7 @@ object StreamQl {
 
       val dropStreamDesc = new DropStreamDesc()
       dropStreamDesc.setIfExists(ifExisted.isDefined)
-      dropStreamDesc.setTableName(streamName)
+      dropStreamDesc.setTableName(s"${db.getOrElse("")}.${streamName}")
       dropStreamDesc.setExpectView(false)
 
       DropStream(dropStreamDesc)

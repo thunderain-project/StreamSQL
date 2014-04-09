@@ -15,14 +15,13 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql
-package stream
+package org.apache.spark.sql.stream
 
-import org.apache.spark.rdd.RDD
 import org.apache.spark.streaming.StreamingContext
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.execution
 
 case class StreamHashJoin(
     leftKeys: Seq[Expression],
@@ -36,9 +35,6 @@ case class StreamHashJoin(
     right.sparkPlan)
 
   def output = left.output ++ right.output
-
-  def execute() = left.execute().transformWith(right.execute(),
-    (l: RDD[Row], r: RDD[Row]) => sparkPlan.execute())
 }
 
 case class StreamCartesianProduct(
@@ -49,9 +45,6 @@ case class StreamCartesianProduct(
   lazy val sparkPlan = execution.CartesianProduct(left.sparkPlan, right.sparkPlan)
 
   def output = left.output ++ right.output
-
-  def execute() = left.execute().transformWith(right.execute(),
-    (l: RDD[Row], r: RDD[Row]) => sparkPlan.execute())
 }
 
 case class StreamBroadcastNestedLoopJoin(
@@ -62,7 +55,6 @@ case class StreamBroadcastNestedLoopJoin(
   extends  BinaryNode {
 
   def left = streamed
-
   def right = broadcast
 
   lazy val sparkPlan = execution.BroadcastNestedLoopJoin(streamed.sparkPlan, broadcast.sparkPlan,
@@ -71,8 +63,5 @@ case class StreamBroadcastNestedLoopJoin(
   def output = left.output ++ right.output
 
   override def otherCopyArgs = ssc :: Nil
-
-  def execute() = left.execute().transformWith(right.execute(),
-    (l: RDD[Row], r: RDD[Row]) => sparkPlan.execute())
 }
 

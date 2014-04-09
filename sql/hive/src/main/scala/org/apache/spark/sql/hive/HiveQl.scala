@@ -224,8 +224,6 @@ private[hive] object HiveQl {
 
         if (nativeCommands contains tree.getText) {
           NativeCommand(sql)
-        } else if(stream.StreamQl.streamDdlCommands contains tree.getText) {
-          stream.StreamQl.nodeToPlan(tree)
         } else {
           nodeToPlan(tree) match {
             case NativePlaceholder => NativeCommand(sql)

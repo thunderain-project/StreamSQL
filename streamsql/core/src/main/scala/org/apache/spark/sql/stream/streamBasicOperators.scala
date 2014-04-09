@@ -15,38 +15,32 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql
-package stream
+package org.apache.spark.sql.stream
 
 import scala.reflect.runtime.universe._
 
 import org.apache.spark.streaming.dstream.{ConstantInputDStream, DStream}
 import org.apache.spark.streaming.StreamingContext
 
+import org.apache.spark.sql.execution
 import org.apache.spark.sql.catalyst.errors._
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.ScalaReflection
 
 case class Project(projectList: Seq[NamedExpression], child: StreamPlan) extends UnaryNode {
   lazy val sparkPlan = execution.Project(projectList, child.sparkPlan)
-
   def output = projectList.map(_.toAttribute)
-  def execute() = child.execute().transform(_ => sparkPlan.execute())
 }
 
 case class Filter(condition: Expression, child: StreamPlan) extends UnaryNode {
   lazy val sparkPlan = execution.Filter(condition, child.sparkPlan)
-
   def output = child.output
-  def execute() = child.execute().transform(_ => sparkPlan.execute())
 }
 
 case class Sample(fraction: Double, withReplacement: Boolean, seed: Int, child: StreamPlan)
   extends UnaryNode {
   lazy val sparkPlan = execution.Sample(fraction, withReplacement, seed, child.sparkPlan)
-
   def output = child.output
-  def execute() = child.execute().transform(_ => sparkPlan.execute())
 }
 
 case class Union(children: Seq[StreamPlan])(@transient ssc: StreamingContext)
@@ -63,21 +57,17 @@ case class Union(children: Seq[StreamPlan])(@transient ssc: StreamingContext)
 case class StopAfter(limit: Int, child: StreamPlan)(@transient ssc: StreamingContext)
   extends UnaryNode {
   lazy val sparkPlan = execution.StopAfter(limit, child.sparkPlan)(ssc.sparkContext)
-
   override def otherCopyArgs = ssc :: Nil
 
   def output = child.output
-  def execute() = child.execute().transform(_ => sparkPlan.execute())
 }
 
 case class TopK(limit: Int, sortOrder: Seq[SortOrder], child: StreamPlan)
     (@transient ssc: StreamingContext) extends UnaryNode {
   lazy val sparkPlan = execution.TopK(limit, sortOrder, child.sparkPlan)(ssc.sparkContext)
-
   override def otherCopyArgs = ssc :: Nil
 
   def output = child.output
-  def execute() = child.execute().transform(_ => sparkPlan.execute())
 }
 
 case class Sort(
@@ -88,7 +78,7 @@ case class Sort(
 
   lazy val sparkPlan = execution.Sort(sortOrder, global, child.sparkPlan)
 
-  def execute() = attachTree(this, "sort") {
+  override def execute() = attachTree(this, "sort") {
     child.execute().transform(_ => sparkPlan.execute())
   }
 

@@ -227,8 +227,7 @@ class HiveContext(sc: SparkContext) extends SQLContext(sc) {
       HashJoin,
       BasicOperators,
       CartesianProduct,
-      BroadcastNestedLoopJoin,
-      SparkSpecificStrategies
+      BroadcastNestedLoopJoin
     )
   }
 

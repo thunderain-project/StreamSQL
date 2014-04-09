@@ -15,25 +15,25 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql
-package stream
+package org.apache.spark.sql.hive.stream
 
-import org.apache.spark.sql.catalyst.expressions._
+import org.apache.hadoop.hive.ql.plan.{CreateTableDesc, DDLDesc, DropTableDesc}
 
-case class StreamGenerate(
-    generator: Generator,
-    join: Boolean,
-    outer: Boolean,
-    child: StreamPlan)
-  extends UnaryNode {
+import org.apache.spark.sql.catalyst.plans.logical.Command
 
-  def output = if (join) {
-    child.output ++ generator.output
-  } else {
-    generator.output
-  }
-
-  lazy val sparkPlan = execution.Generate(generator, join, outer, child.sparkPlan)
-
-  def execute() = child.execute().transform(_ => sparkPlan.execute())
+object CreateStreamDesc {
+  val STREAM_CONSTANTS = ("STREAM", "TRUE")
 }
+
+class CreateStreamDesc extends CreateTableDesc
+
+class DropStreamDesc extends DropTableDesc
+
+abstract class StreamDDLCommand(ddlDesc: DDLDesc) extends Command {
+  self: Product =>
+}
+
+case class DropStream(dropStreamDesc: DropStreamDesc) extends StreamDDLCommand(dropStreamDesc)
+
+case class CreateStream(createStreamDesc: CreateStreamDesc)
+  extends StreamDDLCommand(createStreamDesc)

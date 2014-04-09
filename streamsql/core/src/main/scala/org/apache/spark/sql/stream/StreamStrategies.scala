@@ -15,23 +15,23 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql
+package org.apache.spark.sql.stream
 
-import org.apache.spark.SparkContext
+import org.apache.spark.streaming.dstream.ConstantInputDStream
 
+import org.apache.spark.sql.{StreamSQLContext, stream}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.planning._
 import org.apache.spark.sql.catalyst.plans._
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.plans.logical.{BaseRelation, LogicalPlan}
 import org.apache.spark.sql.catalyst.plans.physical._
-import org.apache.spark.sql.execution.BuildRight
+import org.apache.spark.sql.execution.{BuildRight, SparkLogicalPlan}
 
-abstract class StrategiesFactory[T <: QueryPlan[T]] extends QueryPlanner[T] {
-  val sparkContext: SparkContext
-  val factory: StrategyFactory[T]
+abstract class StreamStrategies extends QueryPlanner[StreamPlan] {
+  self: StreamSQLContext#StreamPlanner =>
 
   object HashJoin extends Strategy {
-    def apply(plan: LogicalPlan): Seq[T] = plan match {
+    def apply(plan: LogicalPlan): Seq[StreamPlan] = plan match {
       case FilteredOperation(predicates, logical.Join(left, right, Inner, condition)) =>
         logger.debug(s"Considering join: ${predicates ++ condition}")
         // Find equi-join predicates that can be evaluated before the join, and thus can be used
@@ -53,12 +53,12 @@ abstract class StrategiesFactory[T <: QueryPlan[T]] extends QueryPlanner[T] {
           val leftKeys = joinKeys.map(_._1)
           val rightKeys = joinKeys.map(_._2)
 
-          val joinOp = factory.hashJoin(
+          val joinOp = stream.StreamHashJoin(
             leftKeys, rightKeys, BuildRight, planLater(left), planLater(right))
 
           // Make sure other conditions are met if present.
           if (otherPredicates.nonEmpty) {
-            factory.filter(combineConjunctivePredicates(otherPredicates), joinOp) :: Nil
+            stream.Filter(combineConjunctivePredicates(otherPredicates), joinOp) :: Nil
           } else {
             joinOp :: Nil
           }
@@ -78,7 +78,7 @@ abstract class StrategiesFactory[T <: QueryPlan[T]] extends QueryPlanner[T] {
   }
 
   object PartialAggregation extends Strategy {
-    def apply(plan: LogicalPlan): Seq[T] = plan match {
+    def apply(plan: LogicalPlan): Seq[StreamPlan] = plan match {
       case logical.Aggregate(groupingExpressions, aggregateExpressions, child) =>
         // Collect all aggregate expressions.
         val allAggregates =
@@ -115,15 +115,15 @@ abstract class StrategiesFactory[T <: QueryPlan[T]] extends QueryPlanner[T] {
              partialEvaluations.values.flatMap(_.partialEvaluations)).toSeq
 
           // Construct two phased aggregation.
-          factory.aggregate(
+          stream.StreamAggregate(
             partial = false,
             namedGroupingExpressions.values.map(_.toAttribute).toSeq,
             rewrittenAggregateExpressions,
-            factory.aggregate(
+            stream.StreamAggregate(
               partial = true,
               groupingExpressions,
               partialComputation,
-              planLater(child))) :: Nil
+              planLater(child))(streamingContext))(streamingContext) :: Nil
         } else {
           Nil
         }
@@ -132,27 +132,29 @@ abstract class StrategiesFactory[T <: QueryPlan[T]] extends QueryPlanner[T] {
   }
 
   object BroadcastNestedLoopJoin extends Strategy {
-    def apply(plan: LogicalPlan): Seq[T] = plan match {
+    def apply(plan: LogicalPlan): Seq[StreamPlan] = plan match {
       case logical.Join(left, right, joinType, condition) =>
-        factory.broadcastNestedLoopJoin(
-          planLater(left), planLater(right), joinType, condition) :: Nil
+        stream.StreamBroadcastNestedLoopJoin(
+          planLater(left), planLater(right), joinType, condition)(streamingContext) :: Nil
       case _ => Nil
     }
   }
 
   object CartesianProduct extends Strategy {
-    def apply(plan: LogicalPlan): Seq[T] = plan match {
+    def apply(plan: LogicalPlan): Seq[StreamPlan] = plan match {
       case logical.Join(left, right, _, None) =>
-        factory.cartesianProduct(planLater(left), planLater(right)) :: Nil
+        stream.StreamCartesianProduct(planLater(left), planLater(right)) :: Nil
       case logical.Join(left, right, Inner, Some(condition)) =>
-        factory.filter(condition,
-          factory.cartesianProduct(planLater(left), planLater(right))) :: Nil
+        stream.Filter(condition,
+          stream.StreamCartesianProduct(planLater(left), planLater(right))) :: Nil
       case _ => Nil
     }
   }
 
-  protected lazy val singleRowRdd =
-    sparkContext.parallelize(Seq(new GenericRow(Array[Any]()): Row), 1)
+  protected lazy val singleRowDStream = {
+    new ConstantInputDStream(streamingContext,
+      streamingContext.sparkContext. parallelize(Seq(new GenericRow(Array[Any]()): Row), 1))
+  }
 
   def convertToCatalyst(a: Any): Any = a match {
     case s: Seq[Any] => s.map(convertToCatalyst)
@@ -161,53 +163,60 @@ abstract class StrategiesFactory[T <: QueryPlan[T]] extends QueryPlanner[T] {
   }
 
   object TopK extends Strategy {
-    def apply(plan: LogicalPlan): Seq[T] = plan match {
+    def apply(plan: LogicalPlan): Seq[StreamPlan] = plan match {
       case logical.StopAfter(IntegerLiteral(limit), logical.Sort(order, child)) =>
-        factory.topK(limit, order, planLater(child)) :: Nil
+        stream.TopK(limit, order, planLater(child))(streamingContext) :: Nil
       case _ => Nil
     }
   }
 
   // Can we automate these 'pass through' operations?
   object BasicOperators extends Strategy {
-    // TOOD: Set
+    // TODO: Set
     val numPartitions = 200
-    def apply(plan: LogicalPlan): Seq[T] = plan match {
+    def apply(plan: LogicalPlan): Seq[StreamPlan] = plan match {
       case logical.Distinct(child) =>
-        factory.aggregate(
-          partial = false, child.output, child.output, planLater(child)) :: Nil
+        stream.StreamAggregate(
+          partial = false, child.output, child.output, planLater(child))(streamingContext) :: Nil
       case logical.Sort(sortExprs, child) =>
         // This sort is a global sort. Its requiredDistribution will be an OrderedDistribution.
-        factory.sort(sortExprs, global = true, planLater(child)):: Nil
+        stream.Sort(sortExprs, global = true, planLater(child)):: Nil
       case logical.SortPartitions(sortExprs, child) =>
         // This sort only sorts tuples within a partition. Its requiredDistribution will be
         // an UnspecifiedDistribution.
-        factory.sort(sortExprs, global = false, planLater(child)) :: Nil
-    case logical.Project(projectList, child) =>
-      factory.project(projectList, planLater(child)) :: Nil
+        stream.Sort(sortExprs, global = false, planLater(child)) :: Nil
+      case logical.Project(projectList, child) =>
+        stream.Project(projectList, planLater(child)) :: Nil
       case logical.Filter(condition, child) =>
-        factory.filter(condition, planLater(child)) :: Nil
+        stream.Filter(condition, planLater(child)) :: Nil
       case logical.Aggregate(group, agg, child) =>
-        factory.aggregate(partial = false, group, agg, planLater(child)) :: Nil
+        stream.StreamAggregate(partial = false, group, agg, planLater(child))(streamingContext) ::
+          Nil
       case logical.Sample(fraction, withReplacement, seed, child) =>
-        factory.sample(fraction, withReplacement, seed, planLater(child)) :: Nil
+        stream.Sample(fraction, withReplacement, seed, planLater(child)) :: Nil
       case logical.LocalRelation(output, data) =>
-        val dataAsRdd =
-          sparkContext.parallelize(data.map(r =>
-            new GenericRow(r.productIterator.map(convertToCatalyst).toArray): Row))
-        factory.existingData(output, dataAsRdd) :: Nil
+        val dataAsDStream = {
+          new ConstantInputDStream(streamingContext,
+            streamingContext.sparkContext.parallelize(data.map(r =>
+              new GenericRow(r.productIterator.map(convertToCatalyst).toArray): Row)))
+        }
+        stream.ExistingDStream(output, dataAsDStream) :: Nil
       case logical.StopAfter(IntegerLiteral(limit), child) =>
-        factory.stopAfter(limit, planLater(child)) :: Nil
+        stream.StopAfter(limit, planLater(child))(streamingContext) :: Nil
       case Unions(unionChildren) =>
-        factory.union(unionChildren.map(planLater)) :: Nil
+        stream.Union(unionChildren.map(planLater))(streamingContext) :: Nil
       case logical.Generate(generator, join, outer, _, child) =>
-        factory.generate(generator, join = join, outer = outer, planLater(child)) :: Nil
+        stream.StreamGenerate(generator, join = join, outer = outer, planLater(child)) :: Nil
       case logical.NoRelation =>
-        factory.existingData(Nil, singleRowRdd) :: Nil
+        stream.ExistingDStream(Nil, singleRowDStream) :: Nil
       case logical.Repartition(expressions, child) =>
-        factory.exchange(HashPartitioning(expressions, numPartitions), planLater(child)) :: Nil
+        stream.StreamExchange(HashPartitioning(expressions, numPartitions),
+          planLater(child)) :: Nil
+      case StreamLogicalPlan(existingPlan) => existingPlan :: Nil
+      case t: BaseRelation if (t.isStream == false) =>
+        sparkLogicPlanToStreamPlan(t) :: Nil
+      case t @ SparkLogicalPlan(sparkPlan) => sparkLogicPlanToStreamPlan(t) :: Nil
       case _ => Nil
     }
   }
 }
-

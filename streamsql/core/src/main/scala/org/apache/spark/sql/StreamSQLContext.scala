@@ -56,7 +56,7 @@ class StreamSQLContext(@transient val streamingContext: StreamingContext)
   }
 
   protected[sql] class StreamPlanner extends StreamStrategies {
-    @transient val streamingContext = self.streamingContext
+    val streamingContext = self.streamingContext
 
     val strategies: Seq[Strategy] =
       TopK ::
@@ -64,8 +64,7 @@ class StreamSQLContext(@transient val streamingContext: StreamingContext)
       HashJoin ::
       BasicOperators ::
       CartesianProduct ::
-      BroadcastNestedLoopJoin ::
-      StreamSpecificStrategies :: Nil
+      BroadcastNestedLoopJoin :: Nil
 
     def sparkLogicPlanToStreamPlan(logicalPlan: LogicalPlan): StreamPlan = {
       val plan = sqlContext.planner(logicalPlan).next()

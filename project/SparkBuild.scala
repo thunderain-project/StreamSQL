@@ -70,12 +70,16 @@ object SparkBuild extends Build {
 
   lazy val catalyst = Project("catalyst", file("sql/catalyst"), settings = catalystSettings) dependsOn(core)
 
-  lazy val sql = Project("sql", file("sql/core"), settings = sqlCoreSettings) dependsOn(core, streaming, catalyst)
+  lazy val sql = Project("sql", file("sql/core"), settings = sqlCoreSettings) dependsOn(core, catalyst)
 
   lazy val hive = Project("hive", file("sql/hive"), settings = hiveSettings) dependsOn(sql)
 
   lazy val maybeHive: Seq[ClasspathDependency] = if (isHiveEnabled) Seq(hive) else Seq()
   lazy val maybeHiveRef: Seq[ProjectReference] = if (isHiveEnabled) Seq(hive) else Seq()
+
+  lazy val streamsql = Project("stream-sql", file("streamsql/core"), settings = streamSqlCoreSettings) dependsOn(core, catalyst, sql, streaming)
+
+  lazy val hiveStreamSql = Project("hive-stream-sql", file("streamsql/hive"), settings = hiveStreamSqlSettings) dependsOn(streamsql, hive, graphx, bagel, mllib, streaming, repl)
 
   lazy val streaming = Project("streaming", file("streaming"), settings = streamingSettings) dependsOn(core)
 
@@ -153,13 +157,13 @@ object SparkBuild extends Build {
   lazy val allExternalRefs = Seq[ProjectReference](externalTwitter, externalKafka, externalFlume, externalZeromq, externalMqtt)
 
   lazy val examples = Project("examples", file("examples"), settings = examplesSettings)
-    .dependsOn(core, mllib, graphx, bagel, streaming, hive) dependsOn(allExternal: _*)
+    .dependsOn(core, mllib, graphx, bagel, streaming, externalTwitter, hive, streamsql, hiveStreamSql) dependsOn(allExternal: _*)
 
   // Everything except assembly, hive, tools, java8Tests and examples belong to packageProjects
-  lazy val packageProjects = Seq[ProjectReference](core, repl, bagel, streaming, mllib, graphx, catalyst, sql) ++ maybeYarnRef ++ maybeHiveRef ++ maybeGangliaRef
+  lazy val packageProjects = Seq[ProjectReference](core, repl, bagel, streaming, mllib, graphx, catalyst, sql, streamsql) ++ maybeYarnRef ++ maybeGangliaRef
 
   lazy val allProjects = packageProjects ++ allExternalRefs ++
-    Seq[ProjectReference](examples, tools, assemblyProj) ++ maybeJava8Tests
+    Seq[ProjectReference](examples, tools, assemblyProj, hive, hiveStreamSql) ++ maybeJava8Tests
 
   def sharedSettings = Defaults.defaultSettings ++ MimaBuild.mimaSettings(file(sparkHome)) ++ Seq(
     organization       := "org.apache.spark",
@@ -507,6 +511,14 @@ object SparkBuild extends Build {
         |import org.apache.spark.sql.hive._
         |import org.apache.spark.sql.hive.TestHive._
         |import org.apache.spark.sql.parquet.ParquetTestData""".stripMargin
+  )
+
+  def streamSqlCoreSettings = sharedSettings ++ Seq(
+    name := "stream-sql"
+  )
+
+  def hiveStreamSqlSettings = sharedSettings ++ assemblyProjSettings ++ hiveSettings ++ Seq(
+    name := "hive-stream-sql"
   )
 
   def streamingSettings = sharedSettings ++ Seq(

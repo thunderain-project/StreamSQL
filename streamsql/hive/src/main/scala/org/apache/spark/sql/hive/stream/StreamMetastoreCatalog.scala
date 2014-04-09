@@ -22,7 +22,6 @@ import java.net.URI
 import org.apache.hadoop.hive.metastore.TableType
 import org.apache.hadoop.hive.ql.metadata.Table
 import org.apache.hadoop.hive.ql.session.SessionState
-import org.apache.hadoop.hive.ql.plan.{CreateStreamDesc, DropStreamDesc}
 import org.apache.hadoop.hive.serde.serdeConstants
 
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan

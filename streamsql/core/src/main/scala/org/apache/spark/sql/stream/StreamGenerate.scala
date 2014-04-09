@@ -15,29 +15,25 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql
-package stream
+package org.apache.spark.sql.stream
 
-import org.apache.spark.streaming.StreamingContext
-
-import org.apache.spark.sql.catalyst.errors._
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.execution
 
-case class StreamAggregate(
-    partial: Boolean,
-    groupingExpressions: Seq[Expression],
-    aggregateExpressions: Seq[NamedExpression],
-    child: StreamPlan)(@transient ssc: StreamingContext)
+case class StreamGenerate(
+    generator: Generator,
+    join: Boolean,
+    outer: Boolean,
+    child: StreamPlan)
   extends UnaryNode {
 
-  lazy val sparkPlan = execution.Aggregate(partial, groupingExpressions,
-    aggregateExpressions, child.sparkPlan)(ssc.sparkContext)
-
-  override def otherCopyArgs = ssc :: Nil
-
-  def output = aggregateExpressions.map(_.toAttribute)
-
-  def execute() = attachTree(this, "execute") {
-    child.execute().transform(_ => sparkPlan.execute())
+  def output = if (join) {
+    child.output ++ generator.output
+  } else {
+    generator.output
   }
+
+  lazy val sparkPlan = execution.Generate(generator, join, outer, child.sparkPlan)
+
+  override def execute() = child.execute().transform(_ => sparkPlan.execute())
 }

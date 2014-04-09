@@ -15,19 +15,19 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql
-package stream
+package org.apache.spark.sql.stream
 
 import org.apache.spark.sql.catalyst.errors._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules._
+import org.apache.spark.sql.execution
 
 case class StreamExchange(newPartitioning: Partitioning, child: StreamPlan) extends UnaryNode {
   def output = child.output
 
   lazy val sparkPlan = execution.Exchange(newPartitioning, child.sparkPlan)
 
-  def execute = attachTree(this, "execute") {
+  override def execute = attachTree(this, "execute") {
     child.execute().transform(_ => sparkPlan.execute())
   }
 }
