@@ -54,17 +54,17 @@ case class Union(children: Seq[StreamPlan])(@transient ssc: StreamingContext)
   override def otherCopyArgs = ssc :: Nil
 }
 
-case class StopAfter(limit: Int, child: StreamPlan)(@transient ssc: StreamingContext)
+case class Limit(limit: Int, child: StreamPlan)(@transient ssc: StreamingContext)
   extends UnaryNode {
-  lazy val sparkPlan = execution.StopAfter(limit, child.sparkPlan)(ssc.sparkContext)
+  lazy val sparkPlan = execution.Limit(limit, child.sparkPlan)(ssc.sparkContext)
   override def otherCopyArgs = ssc :: Nil
 
   def output = child.output
 }
 
-case class TopK(limit: Int, sortOrder: Seq[SortOrder], child: StreamPlan)
+case class TakeOrdered(limit: Int, sortOrder: Seq[SortOrder], child: StreamPlan)
     (@transient ssc: StreamingContext) extends UnaryNode {
-  lazy val sparkPlan = execution.TopK(limit, sortOrder, child.sparkPlan)(ssc.sparkContext)
+  lazy val sparkPlan = execution.TakeOrdered(limit, sortOrder, child.sparkPlan)(ssc.sparkContext)
   override def otherCopyArgs = ssc :: Nil
 
   def output = child.output

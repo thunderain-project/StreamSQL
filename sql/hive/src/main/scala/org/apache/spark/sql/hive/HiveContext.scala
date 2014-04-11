@@ -155,7 +155,7 @@ class HiveContext(sc: SparkContext) extends SQLContext(sc) {
   /**
    * Runs the specified SQL query using Hive.
    */
-  protected def runSqlHive(sql: String): Seq[String] = {
+  protected[sql] def runSqlHive(sql: String): Seq[String] = {
     val maxResults = 100000
     val results = runHive(sql, 100000)
     // It is very confusing when you only get back some of the results...
@@ -169,7 +169,7 @@ class HiveContext(sc: SparkContext) extends SQLContext(sc) {
    * Execute the command using Hive and return the results as a sequence. Each element
    * in the sequence is one row.
    */
-  protected def runHive(cmd: String, maxRows: Int = 1000): Seq[String] = {
+  protected[sql] def runHive(cmd: String, maxRows: Int = 1000): Seq[String] = {
     try {
       val cmd_trimmed: String = cmd.trim()
       val tokens: Array[String] = cmd_trimmed.split("\\s+")
@@ -235,7 +235,7 @@ class HiveContext(sc: SparkContext) extends SQLContext(sc) {
   override protected[sql] val planner = hivePlanner
 
   @transient
-  protected lazy val emptyResult =
+  protected[sql] lazy val emptyResult =
     sparkContext.parallelize(Seq(new GenericRow(Array[Any]()): Row), 1)
 
   /** Extends QueryExecution with hive specific features. */

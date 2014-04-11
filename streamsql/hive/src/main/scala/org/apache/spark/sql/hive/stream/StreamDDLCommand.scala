@@ -19,7 +19,14 @@ package org.apache.spark.sql.hive.stream
 
 import org.apache.hadoop.hive.ql.plan.{CreateTableDesc, DDLDesc, DropTableDesc}
 
+import org.apache.spark.streaming.dstream.ConstantInputDStream
+
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.plans.logical.Command
+import org.apache.spark.sql.catalyst.expressions.GenericRow
+import org.apache.spark.sql.execution.ExistingRdd
+import org.apache.spark.sql.hive.StreamHiveContext
+import org.apache.spark.sql.stream.LeafNode
 
 object CreateStreamDesc {
   val STREAM_CONSTANTS = ("STREAM", "TRUE")
@@ -37,3 +44,34 @@ case class DropStream(dropStreamDesc: DropStreamDesc) extends StreamDDLCommand(d
 
 case class CreateStream(createStreamDesc: CreateStreamDesc)
   extends StreamDDLCommand(createStreamDesc)
+
+abstract class StreamDDLOperator(ddlDesc: DDLDesc)(@transient streamHiveContext: StreamHiveContext)
+    extends LeafNode {
+  self: Product =>
+  final def output = Nil
+  final val sparkPlan = dummyPlan
+  protected lazy val emptyRdd = streamHiveContext.streamingContext.sparkContext
+    .parallelize(Seq(new GenericRow(Array[Any]()): Row), 1)
+  protected lazy val dummyPlan = ExistingRdd(Nil, emptyRdd)
+
+  def emptyResult =
+    new ConstantInputDStream(streamHiveContext.streamingContext, emptyRdd)
+}
+
+case class CreateStreamOperator(@transient createStreamDesc: CreateStreamDesc)
+    (@transient streamHiveContext: StreamHiveContext)
+  extends StreamDDLOperator(createStreamDesc)(streamHiveContext) {
+  def execute() = {
+    streamHiveContext.catalog.createStream(createStreamDesc)
+    emptyResult
+  }
+}
+
+case class DropStreamOperator(@transient dropStreamDesc: DropStreamDesc)
+    (@transient streamHiveContext: StreamHiveContext)
+  extends StreamDDLOperator(dropStreamDesc)(streamHiveContext) {
+  def execute() = {
+    streamHiveContext.catalog.dropStream(dropStreamDesc)
+    emptyResult
+  }
+}

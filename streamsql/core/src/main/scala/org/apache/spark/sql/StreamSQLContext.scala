@@ -49,7 +49,7 @@ class StreamSQLContext(@transient val streamingContext: StreamingContext)
   def registerDStreamAsStream(dstream: SchemaDStream, streamName: String): Unit =
     sqlContext.catalog.registerTable(None, streamName, dstream.logicalPlan)
 
-  def sql(sqlText: String): SchemaDStream = {
+  def streamSql(sqlText: String): SchemaDStream = {
     val result = new SchemaDStream(this, sqlContext.parseSql(sqlText))
     result.queryExecution.toDStream
     result
@@ -59,14 +59,14 @@ class StreamSQLContext(@transient val streamingContext: StreamingContext)
     val streamingContext = self.streamingContext
 
     val strategies: Seq[Strategy] =
-      TopK ::
+      TakeOrdered ::
       PartialAggregation ::
       HashJoin ::
       BasicOperators ::
       CartesianProduct ::
       BroadcastNestedLoopJoin :: Nil
 
-    def sparkLogicPlanToStreamPlan(logicalPlan: LogicalPlan): StreamPlan = {
+    def sparkPlanWrapper(logicalPlan: LogicalPlan): StreamPlan = {
       val plan = sqlContext.planner(logicalPlan).next()
       val executedPlan = sqlContext.prepareForExecution(plan)
       StreamPlanWrap(executedPlan)(streamingContext)

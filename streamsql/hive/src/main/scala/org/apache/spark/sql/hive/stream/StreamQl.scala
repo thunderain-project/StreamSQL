@@ -58,7 +58,7 @@ object StreamQl {
     try {
       HiveQl.parseSql(sql)
     } catch {
-      case _: Exception =>
+      case _: Throwable =>
         try {
           val tree = HiveQl.getAst(sql)
           if (streamDdlCommands contains tree.getText) {
@@ -67,7 +67,7 @@ object StreamQl {
             throw new NotImplementedError(sql)
           }
         } catch {
-          case e: Exception => throw new ParseException(sql, e)
+          case e: Throwable => throw new ParseException(sql, e)
         }
     }
   }
@@ -80,7 +80,6 @@ object StreamQl {
         cols ::
         comment ::
         rowFormat ::
-        location ::
         tableProperties ::
         serializer ::
         streamFormat ::
@@ -93,11 +92,11 @@ object StreamQl {
           "TOK_TABCOLLIST",
           "TOK_TABLECOMMENT",
           "TOK_TABLEROWFORMAT",
-          "TOK_TABLELOCATION",
           "TOK_TABLEPROPERTIES",
           "TOK_TABLESERIALIZER",
           "TOK_TABLEFILEFORMAT",
           "TOK_LIKESTREAM",
+          "TOK_TABLELOCATION",
           "TOK_QUERY",
           "TOK_STORAGEHANDLER",
           "TOK_TABLEBUCKETS",
@@ -114,15 +113,15 @@ object StreamQl {
           s"Unhandled clauses: ${notImplemented.flatten.map(HiveQl.dumpTree(_)).mkString("\n")}")
       }
 
-      val (db, streamName) = streamNameParts.getChildren.map { case Token(part, Nil) =>
+      val streamName = streamNameParts.getChildren.map { case Token(part, Nil) =>
         HiveQl.cleanIdentifier(part)
       } match {
-        case Seq(streamOnly) => (None, streamOnly)
-        case Seq(dbName, streamName) => (Some(dbName), streamName)
+        case Seq(streamOnly) => streamOnly
+        case Seq(dbName, streamName) => s"${dbName}.${streamName}"
       }
 
       val createStreamDesc = new CreateStreamDesc
-      createStreamDesc.setTableName(s"${db.getOrElse("")}.${streamName}")
+      createStreamDesc.setTableName(streamName)
       createStreamDesc.setIfNotExists(ifNotExisted.isDefined)
 
       comment.foreach { case Token("TOK_TABLECOMMENT", Token(c, Nil) :: Nil) => createStreamDesc
@@ -200,10 +199,6 @@ object StreamQl {
           createStreamDesc.setSerdeProps(serdeProps)
       }
 
-      location.foreach { case Token("TOK_TABLELOCATION", Token(loc, Nil) :: Nil) =>
-        createStreamDesc.setLocation(BaseSemanticAnalyzer.unescapeSQLString(loc))
-      }
-
       streamFormat.foreach {
         case Token("TOK_TABLEFILEFORMAT",
                 Token(input, Nil):: Token(output, Nil) :: Nil) =>
@@ -221,16 +216,16 @@ object StreamQl {
       val (Some(streamNameParts) :: ifExisted :: Nil) =
         HiveQl.getClauses(Seq("TOK_TABNAME", "TOK_IFEXISTS"), children)
 
-      val (db, streamName) = streamNameParts.getChildren.map { case Token(part, Nil) =>
+      val streamName = streamNameParts.getChildren.map { case Token(part, Nil) =>
         HiveQl.cleanIdentifier(part)
       } match {
-        case Seq(streamOnly) => (None, streamOnly)
-        case Seq(dbName, stream) => (Some(dbName), stream)
+        case Seq(streamOnly) => streamOnly
+        case Seq(dbName, stream) => s"{$dbName}.{$stream}"
       }
 
       val dropStreamDesc = new DropStreamDesc()
       dropStreamDesc.setIfExists(ifExisted.isDefined)
-      dropStreamDesc.setTableName(s"${db.getOrElse("")}.${streamName}")
+      dropStreamDesc.setTableName(streamName)
       dropStreamDesc.setExpectView(false)
 
       DropStream(dropStreamDesc)

@@ -199,7 +199,7 @@ object ExistingRdd {
  * :: DeveloperApi ::
  */
 @DeveloperApi
-case class ExistingRdd(output: Seq[Attribute], rdd: RDD[Row]) extends LeafNode {
+case class ExistingRdd(output: Seq[Attribute], var rdd: RDD[Row]) extends LeafNode {
   override def execute() = rdd
 }
 

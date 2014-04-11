@@ -74,8 +74,8 @@ object SparkBuild extends Build {
 
   lazy val hive = Project("hive", file("sql/hive"), settings = hiveSettings) dependsOn(sql)
 
-  lazy val maybeHive: Seq[ClasspathDependency] = if (isHiveEnabled) Seq(hive) else Seq()
-  lazy val maybeHiveRef: Seq[ProjectReference] = if (isHiveEnabled) Seq(hive) else Seq()
+  lazy val maybeHive: Seq[ClasspathDependency] = if (isHiveEnabled) Seq(hive, hiveStreamSql) else Seq()
+  lazy val maybeHiveRef: Seq[ProjectReference] = if (isHiveEnabled) Seq(hive, hiveStreamSql) else Seq()
 
   lazy val streamsql = Project("stream-sql", file("streamsql/core"), settings = streamSqlCoreSettings) dependsOn(core, catalyst, sql, streaming)
 

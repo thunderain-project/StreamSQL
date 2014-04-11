@@ -20,21 +20,26 @@ package org.apache.spark.sql.hive.stream
 import java.net.URI
 
 import org.apache.hadoop.hive.metastore.TableType
-import org.apache.hadoop.hive.ql.metadata.Table
 import org.apache.hadoop.hive.ql.session.SessionState
 import org.apache.hadoop.hive.serde.serdeConstants
 
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.hive.{HiveContext, HiveMetastoreCatalog}
+import org.apache.spark.sql.hive.{StreamHiveContext, HiveMetastoreCatalog}
 
-class StreamMetastoreCatalog (hive: HiveContext) extends HiveMetastoreCatalog(hive){
+class StreamMetastoreCatalog (hive: StreamHiveContext)
+  extends HiveMetastoreCatalog(hive.hiveContext){
   def dropStream(dropStreamDesc: DropStreamDesc) = {
-    val tbl: Table = client.getTable(dropStreamDesc.getTableName)
-    // simply drop the table here
-    if(tbl != null && tbl.canDrop) {
-       client.dropTable(dropStreamDesc.getTableName)
+    val (dbName, streamName) = {
+      val splits = dropStreamDesc.getTableName.split("\\.")
+      if (splits.length == 1) {
+        (SessionState.get().getCurrentDatabase, splits(0))
+      } else if (splits.length == 2) {
+        (splits(0), splits(1))
+      } else {
+        throw new IllegalArgumentException("Illegal database and stream name")
+      }
     }
+
+    client.dropTable(dbName, streamName, true, !dropStreamDesc.getIfExists)
   }
 
   //namespace decoration
@@ -86,17 +91,6 @@ class StreamMetastoreCatalog (hive: HiveContext) extends HiveMetastoreCatalog(hi
     tbl.setCreateTime((System.currentTimeMillis() / 1000).toInt)
 
     client.createTable(tbl, createStreamDesc.getIfNotExists)
-  }
-
-  object StreamDDLRule extends Rule[LogicalPlan] {
-    def apply(plan: LogicalPlan): LogicalPlan = plan transform {
-      case p @ CreateStream(createStreamDesc) =>
-        createStream(createStreamDesc)
-        p
-      case p @ DropStream(dropStreamDesc) =>
-        dropStream(dropStreamDesc)
-        p
-    }
   }
 }
 

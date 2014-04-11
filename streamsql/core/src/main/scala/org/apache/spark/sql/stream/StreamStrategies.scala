@@ -162,10 +162,10 @@ abstract class StreamStrategies extends QueryPlanner[StreamPlan] {
     case other => other
   }
 
-  object TopK extends Strategy {
+  object TakeOrdered extends Strategy {
     def apply(plan: LogicalPlan): Seq[StreamPlan] = plan match {
-      case logical.StopAfter(IntegerLiteral(limit), logical.Sort(order, child)) =>
-        stream.TopK(limit, order, planLater(child))(streamingContext) :: Nil
+      case logical.Limit(IntegerLiteral(limit), logical.Sort(order, child)) =>
+        stream.TakeOrdered(limit, order, planLater(child))(streamingContext) :: Nil
       case _ => Nil
     }
   }
@@ -201,8 +201,8 @@ abstract class StreamStrategies extends QueryPlanner[StreamPlan] {
               new GenericRow(r.productIterator.map(convertToCatalyst).toArray): Row)))
         }
         stream.ExistingDStream(output, dataAsDStream) :: Nil
-      case logical.StopAfter(IntegerLiteral(limit), child) =>
-        stream.StopAfter(limit, planLater(child))(streamingContext) :: Nil
+      case logical.Limit(IntegerLiteral(limit), child) =>
+        stream.Limit(limit, planLater(child))(streamingContext) :: Nil
       case Unions(unionChildren) =>
         stream.Union(unionChildren.map(planLater))(streamingContext) :: Nil
       case logical.Generate(generator, join, outer, _, child) =>
@@ -214,8 +214,8 @@ abstract class StreamStrategies extends QueryPlanner[StreamPlan] {
           planLater(child)) :: Nil
       case StreamLogicalPlan(existingPlan) => existingPlan :: Nil
       case t: BaseRelation if (t.isStream == false) =>
-        sparkLogicPlanToStreamPlan(t) :: Nil
-      case t @ SparkLogicalPlan(sparkPlan) => sparkLogicPlanToStreamPlan(t) :: Nil
+        sparkPlanWrapper(t) :: Nil
+      case t @ SparkLogicalPlan(sparkPlan) => sparkPlanWrapper(t) :: Nil
       case _ => Nil
     }
   }
