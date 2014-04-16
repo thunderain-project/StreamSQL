@@ -151,4 +151,16 @@ object KafkaUtils {
     createStream[K, V, U, T](
       jssc.ssc, kafkaParams.toMap, Map(topics.mapValues(_.intValue()).toSeq: _*), storageLevel)
   }
+  
+  def createStream[K: ClassTag, V: ClassTag](
+    ssc_ : StreamingContext,
+    kafkaParams: Map[String, String],
+    topics: Map[String, Int],
+    keyDecoder: Decoder[K],
+    valueDecoder: Decoder[V],
+    storageLevel: StorageLevel): DStream[(K, V)] = {
+    new KafkaInputDStreamStub[K, V](
+      ssc_, kafkaParams, topics, keyDecoder, valueDecoder, storageLevel
+    )
+  }
 }

@@ -79,7 +79,7 @@ object SparkBuild extends Build {
 
   lazy val streamsql = Project("stream-sql", file("streamsql/core"), settings = streamSqlCoreSettings) dependsOn(core, catalyst, sql, streaming)
 
-  lazy val hiveStreamSql = Project("hive-stream-sql", file("streamsql/hive"), settings = hiveStreamSqlSettings) dependsOn(streamsql, hive, graphx, bagel, mllib, streaming, repl)
+  lazy val hiveStreamSql = Project("hive-stream-sql", file("streamsql/hive"), settings = hiveStreamSqlSettings) dependsOn(streamsql, catalyst, hive, graphx, bagel, mllib, streaming, repl) dependsOn(allExternal: _*)
 
   lazy val streaming = Project("streaming", file("streaming"), settings = streamingSettings) dependsOn(core)
 
@@ -518,7 +518,15 @@ object SparkBuild extends Build {
   )
 
   def hiveStreamSqlSettings = sharedSettings ++ assemblyProjSettings ++ hiveSettings ++ Seq(
-    name := "hive-stream-sql"
+    name := "hive-stream-sql",
+    libraryDependencies ++= Seq(
+      "com.github.sgroschupf"    % "zkclient"   % "0.1"          excludeAll(excludeNetty),
+      "org.apache.kafka"        %% "kafka"      % "0.8.0",
+      "org.spark-project.akka" %% "akka-zeromq" % akkaVersion excludeAll(excludeNetty),
+      "org.twitter4j" % "twitter4j-stream" % "3.0.3" excludeAll(excludeNetty),
+      "org.apache.flume" % "flume-ng-sdk" % "1.2.0" % "compile" excludeAll(excludeNetty),
+      "org.eclipse.paho" % "mqtt-client" % "0.4.0"
+    )
   )
 
   def streamingSettings = sharedSettings ++ Seq(
