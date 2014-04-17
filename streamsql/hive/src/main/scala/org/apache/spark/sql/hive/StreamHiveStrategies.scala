@@ -19,8 +19,10 @@ package org.apache.spark.sql.hive
 
 import org.apache.spark.sql.StreamSQLContext
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.planning._
 import org.apache.spark.sql.stream.StreamPlan
 import org.apache.spark.sql.hive.stream._
+import org.apache.spark.sql.SQLContext
 
 trait StreamHiveStrategies {
   self: StreamSQLContext#StreamPlanner =>
@@ -32,6 +34,21 @@ trait StreamHiveStrategies {
       case CreateStream(desc) => CreateStreamOperator(desc)(streamHiveContext) :: Nil
       case DropStream(desc) => DropStreamOperator(desc)(streamHiveContext) :: Nil
       case _ => Nil
+    }
+  }
+    /**
+   * Retrieves data using a HiveStreamTableScan.
+   */
+  object StreamHiveTableScans extends Strategy {
+    def apply(plan: LogicalPlan): Seq[StreamPlan] = plan match {
+      case PhysicalOperation(projectList, predicates, relation: MetastoreRelation) =>
+
+        pruneFilterProject(
+          projectList,
+          predicates,
+          StreamHiveTableScan(_, relation)(streamHiveContext)) :: Nil
+      case _ =>
+        Nil
     }
   }
 }

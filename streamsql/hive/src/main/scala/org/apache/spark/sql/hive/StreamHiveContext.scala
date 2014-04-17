@@ -90,7 +90,8 @@ class StreamHiveContext(ssc: StreamingContext) extends StreamSQLContext(ssc) {
       BasicOperators,
       CartesianProduct,
       BroadcastNestedLoopJoin,
-      StreamDDL)
+      StreamDDL,
+      StreamHiveTableScans)
 
     override def sparkPlanWrapper(logicalPlan: LogicalPlan): StreamPlan = {
       val plan = hiveContext.planner(logicalPlan).next()

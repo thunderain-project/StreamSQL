@@ -17,7 +17,7 @@ import scala.collection.immutable.ListMap
 import scala.collection.JavaConversions._
 
 // ToDo where is StreaSqlContext Created
-case class StreamTableScan(
+case class StreamHiveTableScan(
     attributes: Seq[Attribute],
     relation: MetastoreRelation)(
     @transient val sc: StreamHiveContext)
@@ -55,10 +55,10 @@ case class StreamTableScan(
   }
 
   @transient
-  def inputRdd: DStream[_] = streamTableReader.makeDStreamForTable(relation.hiveQlTable)
+  def inputDStream: DStream[_] = streamTableReader.makeDStreamForTable(relation.hiveQlTable)
 
   def execute() = {
-    inputRdd.map { row =>
+    inputDStream.map { row =>
       val values = attributeFunctions.map(_(row))
       new GenericRow(values.map {
         case n: String if n.toLowerCase == "null" => null

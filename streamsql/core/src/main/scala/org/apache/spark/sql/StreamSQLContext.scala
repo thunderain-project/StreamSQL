@@ -22,8 +22,8 @@ import scala.reflect.runtime.universe._
 import org.apache.spark.streaming.StreamingContext
 import org.apache.spark.streaming.dstream.DStream
 
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.dsl
-import org.apache.spark.sql.catalyst.expressions.BindReferences
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.RuleExecutor
 import org.apache.spark.sql.stream._
@@ -70,6 +70,22 @@ class StreamSQLContext(@transient val streamingContext: StreamingContext)
       val plan = sqlContext.planner(logicalPlan).next()
       val executedPlan = sqlContext.prepareForExecution(plan)
       StreamPlanWrap(executedPlan)(streamingContext)
+    }
+    
+    def pruneFilterProject(projectList: Seq[NamedExpression],
+        filterPredicates: Seq[Expression],
+        scanBuilder: Seq[Attribute] => StreamPlan): StreamPlan = {
+      val projectSet = projectList.flatMap(_.references).toSet
+      val filterSet = filterPredicates.flatMap(_.references).toSet
+      val filterCondition = filterPredicates.reduceLeftOption(And)
+
+      if (projectList.toSet == projectSet && filterSet.subsetOf(projectSet)) {
+        val scan = scanBuilder(projectList.asInstanceOf[Seq[Attribute]])
+        filterCondition.map(Filter(_, scan)).getOrElse(scan)
+      } else {
+        val scan = scanBuilder((projectSet ++ filterSet).toSeq)
+        Project(projectList, filterCondition.map(Filter(_, scan)).getOrElse(scan))
+      }
     }
   }
 
