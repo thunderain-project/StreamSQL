@@ -38,8 +38,7 @@ case class StreamHiveTableScan(
     relation.tableDesc.getDeserializer.getObjectInspector.asInstanceOf[StructObjectInspector]
 
   /**
-   * Functions that extract the requested attributes from the hive output.  Partitioned values are
-   * casted from string to its declared data type.
+   * Functions that extract the requested attributes from the hive output.
    */
   @transient
   protected lazy val attributeFunctions: Seq[(Any) => Any] = {

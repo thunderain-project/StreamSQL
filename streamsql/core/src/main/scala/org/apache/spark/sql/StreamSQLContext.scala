@@ -72,7 +72,7 @@ class StreamSQLContext(@transient val streamingContext: StreamingContext)
       StreamPlanWrap(executedPlan)(streamingContext)
     }
     
-    def pruneFilterProject(projectList: Seq[NamedExpression],
+    def filterProject(projectList: Seq[NamedExpression],
         filterPredicates: Seq[Expression],
         scanBuilder: Seq[Attribute] => StreamPlan): StreamPlan = {
       val projectSet = projectList.flatMap(_.references).toSet

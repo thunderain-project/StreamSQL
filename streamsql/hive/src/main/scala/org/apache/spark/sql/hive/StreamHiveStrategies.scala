@@ -43,7 +43,7 @@ trait StreamHiveStrategies {
     def apply(plan: LogicalPlan): Seq[StreamPlan] = plan match {
       case PhysicalOperation(projectList, predicates, relation: MetastoreRelation) =>
 
-        pruneFilterProject(
+        filterProject(
           projectList,
           predicates,
           StreamHiveTableScan(_, relation)(streamHiveContext)) :: Nil

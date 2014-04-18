@@ -299,7 +299,7 @@ class CommonStreamTableReader(@transient _tableDesc: TableDesc, @transient sc: S
     val decoder = properties.getProperty("stream.decoder", DefaultStreamDecoder.getClass.getName)
     ZeroMQUtils.createStream[Writable](sc.streamingContext, path.toString, Subscribe(topic),
                                        (decoder.getClass.newInstance.asInstanceOf[ZeroMqDecoder]).bytesToObject _,
-                                       storageLevel, stragegy)
+                                        storageLevel, stragegy)
   }
   
   private def createMqttInputDStream(
