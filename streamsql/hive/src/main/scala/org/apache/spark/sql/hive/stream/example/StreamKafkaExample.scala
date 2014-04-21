@@ -9,6 +9,8 @@ import org.apache.spark.streaming.StreamingContext._
 import org.apache.spark.streaming.kafka._
 import scala.collection.mutable.ArrayBuffer
 import org.apache.hadoop.hive.conf.HiveConf
+import org.apache.spark.sql.hive.StreamHiveContext
+import org.apache.spark.sql.StreamSQLContext
 
 // scalastyle:off
 /**
@@ -26,29 +28,36 @@ import org.apache.hadoop.hive.conf.HiveConf
 // scalastyle:on
 
 object StreamTableReaderKafka {
+  
   def main(args: Array[String]) {
-    if (args.length < 5) {
-      System.err.println("Usage: KafkaStreamTableReader <master> <zkQuorum> <group> <topics> <numThreads>")
+    if (args.length < 1) {
+      System.err.println("Usage: KafkaStreamTableReader <master> ")
       System.exit(1)
     }
 
-    val Array(master, zkQuorum, group, topics, numThreads) = args
+    val Array(master) = args
 
     val ssc =  new StreamingContext(master, "KafkaStreamTableReader", Seconds(2),
       System.getenv("SPARK_HOME"), StreamingContext.jarOfClass(this.getClass))
-    ssc.checkpoint("checkpoint")
 
- //   val streamHiveContext = new StreamHiveContext(ssc, new HiveConf()) // used for testing
- //   val topicpMap = topics.split(",").map((_,numThreads.toInt)).toMap
+    val streamHiveContext = new StreamHiveContext(ssc)
     
+    streamHiveContext.hiveContext.runSqlHive(
+      "CREATE STREAM IF NOT EXISTS KafkaStream (vid INT, cookie STRING, visitTime TIMESTAMP) " +
+      "ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' " +
+      """LOCATION "kafka://localhost:50001" """ +
+      """TBLPROPERTIES("stream.kafka.params"="group.id=test,zookeeper.connection.timeout.ms=10000","topics"="domestic=1,foreign=1") """)
+    streamHiveContext.hiveContext.runSqlHive(
+      "SELECT vid, count(1) as visitNum from KafkaStream GROUP BY vid ORDER BY visitNum limit 100"
+    )
   }
 }
 
-// Produces some random words between 1 and 100.
+// Produces some random messages.
 object KafkaMessageProducer {
 
   def main(args: Array[String]) {
-    if (args.length < 2) {
+    if (args.length < 4) {
       System.err.println("Usage: KafkaMessageProducer <metadataBrokerList> <topic> " +
         "<messagesPerSec> <seedMsgFilePath>")
       System.exit(1)
