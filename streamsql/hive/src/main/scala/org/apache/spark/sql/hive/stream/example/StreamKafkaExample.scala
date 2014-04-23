@@ -37,19 +37,24 @@ object StreamTableReaderKafka {
 
     val Array(master) = args
 
-    val ssc =  new StreamingContext(master, "KafkaStreamTableReader", Seconds(2),
+    val ssc =  new StreamingContext(master, "StreamTableReaderKafka", Seconds(2),
       System.getenv("SPARK_HOME"), StreamingContext.jarOfClass(this.getClass))
 
     val streamHiveContext = new StreamHiveContext(ssc)
     
-    streamHiveContext.hiveContext.runSqlHive(
-      "CREATE STREAM IF NOT EXISTS KafkaStream (vid INT, cookie STRING, visitTime TIMESTAMP) " +
+    streamHiveContext.streamHiveql("DROP TABLE KafkaStream")
+    streamHiveContext.streamHiveql(
+      "CREATE STREAM KafkaStream (vid INT, cookie STRING, visitTime BIGINT) " +
       "ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' " +
-      """LOCATION "kafka://localhost:50001" """ +
-      """TBLPROPERTIES("stream.kafka.params"="group.id=test,zookeeper.connection.timeout.ms=10000","topics"="domestic=1,foreign=1") """)
-    streamHiveContext.hiveContext.runSqlHive(
-      "SELECT vid, count(1) as visitNum from KafkaStream GROUP BY vid ORDER BY visitNum limit 100"
+      """TBLPROPERTIES("scheme"="kafka","kafka.params.zookeeper.connect"="localhost:50001,localhost:50002") """)
+      //"stream.kafka.params"="group.id#test:zookeeper.connection.timeout.ms#10000","topics"="domestic#1:foreign#1,
+    val result = streamHiveContext.streamHiveql(
+      "SELECT vid, count(1) as visitNum from KafkaStream GROUP BY vid ORDER BY visitNum LIMIT 100"
     )
+    result.print()
+    ssc.start()
+    ssc.awaitTermination()
+    ssc.stop()
   }
 }
 
@@ -94,16 +99,18 @@ object KafkaMessageProducer {
     val random = new Random()
 
     // Send some messages
+    val topics = topic.split(":")
     while(true) {
-      val messages = (1 to messagesPerSec.toInt).map { messageNum =>
-        val msg = msgArray(random.nextInt(msgArray.size))
+      topics.foreach { topic =>
+        val messages = (1 to messagesPerSec.toInt).map { messageNum =>
+          val msg = msgArray(random.nextInt(msgArray.size))
 
-        new KeyedMessage[String, String](topic, msg)
-      }.toArray
+          new KeyedMessage[String, String](topic, msg)
+        }.toArray
 
-      producer.send(messages: _*)
-      Thread.sleep(100)
+        producer.send(messages: _*)
+        Thread.sleep(100)
+      }
     }
   }
-
 }

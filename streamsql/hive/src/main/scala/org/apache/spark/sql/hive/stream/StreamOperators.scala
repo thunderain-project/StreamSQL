@@ -12,7 +12,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.streaming.dstream.DStream
 import scala.Some
 import scala.collection.immutable.ListMap
-
+import org.apache.spark.sql.execution.ExistingRdd
 /* Implicits */
 import scala.collection.JavaConversions._
 
@@ -24,7 +24,7 @@ case class StreamHiveTableScan(
   extends LeafNode
   with HiveInspectors {
 
-  override val sparkPlan: SparkPlan = null
+  override val sparkPlan = ExistingRdd(output, null)
 
   @transient
   val streamTableReader = new CommonStreamTableReader(relation.tableDesc, sc)
@@ -65,8 +65,8 @@ case class StreamHiveTableScan(
         case decimal: org.apache.hadoop.hive.common.`type`.HiveDecimal =>
           BigDecimal(decimal.bigDecimalValue)
         case other => other
-      }.toArray)
-    }
+      }.toArray).asInstanceOf[Row]
+    }.transform{ r => sparkPlan.rdd = r; r }
   }
 
   def output = attributes

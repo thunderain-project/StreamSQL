@@ -3,13 +3,12 @@ package org.apache.spark.sql.hive.stream
 import java.io.InputStream
 import org.apache.hadoop.fs.Path
 //import scala.collection.JavaConvertions._
-import kafka.serializer.Decoder
+import kafka.serializer._
 import kafka.utils.VerifiableProperties
 import akka.util.ByteString
-import org.apache.hadoop.io.{ Writable, ByteWritable, BytesWritable }
+import org.apache.hadoop.io.{ Writable, ByteWritable, BytesWritable, Text }
 
-
-trait SocketDecoder {
+trait SocketDecoder extends Serializable {
    // for socketDStream
   def streamToIterator(stream: InputStream): Iterator[Writable] = {
     new Iterator[Writable] {
@@ -30,7 +29,7 @@ trait SocketDecoder {
   }
 }
 
-trait ZeroMqDecoder {
+trait ZeroMqDecoder extends Serializable {
   // for zeroMqInputDStream
   def bytesToObject(bytes: Seq[ByteString]): Iterator[Writable] = {
     bytes.iterator.map { bytestring =>
@@ -39,14 +38,34 @@ trait ZeroMqDecoder {
   }
 }
 
-class KafkaDecoder(props: VerifiableProperties = null) extends Decoder[Writable] {
+trait KafkaDecoder extends Decoder[Writable] with Serializable {
   // for kafkaInputDstream
   def fromBytes(bytes: Array[Byte]): Writable = {
     new BytesWritable(bytes)
   }
 }
 
-trait InputFilter {
+class KafkaTextDecoder(props: VerifiableProperties = null) extends KafkaDecoder {
+  def this() = this(null)
+  override def fromBytes(bytes: Array[Byte]): Writable = {
+    new Text(bytes)
+  }
+}
+
+class KafkaStringDecoder(props: VerifiableProperties = null) extends Decoder[String] with Serializable {
+  def this() = this(null)
+  val encoding =
+    if(props == null)
+      "UTF8"
+    else
+      props.getString("serializer.encoding", "UTF8")
+
+  def fromBytes(bytes: Array[Byte]): String = {
+    new String(bytes, encoding)
+  }
+}
+
+trait InputFilter extends Serializable {
   def pathFilter (path: Path): Boolean = {
     !path.getName().startsWith(".")
   }
@@ -56,5 +75,4 @@ trait StreamDecoder extends SocketDecoder with ZeroMqDecoder
 
 object DefaultStreamDecoder extends StreamDecoder
 object DefaultInputFilter extends InputFilter
-
 

@@ -34,7 +34,7 @@ import kafka.consumer.ConsumerConfig
 import akka.zeromq.Subscribe
 import twitter4j.auth.Authorization
 import akka.actor.{Props, SupervisorStrategy}
-
+import scala.collection.JavaConversions._
 
 /**class StreamHiveContext (
   val streamingContext: StreamingContext,
@@ -78,25 +78,25 @@ class CommonStreamTableReader(@transient _tableDesc: TableDesc, @transient sc: S
     // Create local references to member variables, so that the entire `this` object won't be
     // serialized in the closure below.
     val tableDesc = _tableDesc
-    val path = hiveTable.getPath
+    val scheme = tableDesc.getProperties.getProperty("scheme", "kafka")
  
-    val inputDStream = path.toUri.getScheme.toLowerCase match {
+    val inputDStream = scheme.toLowerCase match {
       case "kafka"  =>
-        createKafkaInputDStream(tableDesc, path)
+        createKafkaInputDStream(tableDesc)
       case "flume" =>
-        createFlumeInputDStream(tableDesc, path)
+        createFlumeInputDStream(tableDesc)
       case "socket" =>
-        createSocketInputDStream(tableDesc, path)
+        createSocketInputDStream(tableDesc)
       case "zeromq" =>
-        createZeroMQInputDStream(tableDesc, path)
+        createZeroMQInputDStream(tableDesc)
       case "twitter" =>
-        createTwitterInputDStream(tableDesc, path)
+        createTwitterInputDStream(tableDesc)
       case "mqtt" =>
-        createMqttInputDStream(tableDesc, path)
+        createMqttInputDStream(tableDesc)
       case "hdfs" =>
-        createHdfsInputDStream(tableDesc, path)
+        createHdfsInputDStream(tableDesc, hiveTable.getPath())
       case "file" =>
-        createHdfsInputDStream(tableDesc, path)
+        createHdfsInputDStream(tableDesc, hiveTable.getPath())
 /*      case "hftp" =>
         createHdfsInputDStream(tableDesc, path)
       case "hsftp" =>
@@ -149,23 +149,13 @@ class CommonStreamTableReader(@transient _tableDesc: TableDesc, @transient sc: S
     }
   }
 
-  def getPropertyFields(properties: Properties, property: String)
-    : Array[(String, String)] = {
-    val propertyValue: String = properties.getProperty(property)
-    if (propertyValue == null) {
-      new Array[(String, String)](0)
-    } else {
-      propertyValue.split(",").map { pair =>
-        val param = pair.split("=", 2)
-        if (param.size == 2) {
-          (param(0).trim, param(1).trim)
-        } else {
-          new Exception("invalid parameter! " + pair)
-          (param(0).trim, "")
-        }
-      }
-    }
-  }
+  def getPropertyFields(properties: Properties, prefix: String)
+    : Map[String, String] = {
+    val newPrefix = if (!prefix.endsWith(".")) prefix + "."  else prefix
+    for { (key, value) <- properties 
+        if(key.startsWith(newPrefix)) 
+    } yield (key.substring(newPrefix.length, key.length), value)
+  }.toMap
   
   /**
    * Creates a kafkaDStream based on the broadcasted HiveConf and other job properties that will be
@@ -178,8 +168,8 @@ class CommonStreamTableReader(@transient _tableDesc: TableDesc, @transient sc: S
     val initializeJobConfFunc = StreamTableReader.initializeLocalJobConfFunc(tableDesc) _
     val properties = tableDesc.getProperties
     
-    val filterName = properties.getProperty("stream.hdfs.filter")
-    val newFilesOnly = properties.getProperty("stream.hdfs.newFilesOnly", "true").toBoolean
+    val filterName = properties.getProperty("hdfs.filter")
+    val newFilesOnly = properties.getProperty("hdfs.newFilesOnly", "true").toBoolean
     val filter = if (filterName == null) {
       DefaultInputFilter
     } else {
@@ -194,29 +184,34 @@ class CommonStreamTableReader(@transient _tableDesc: TableDesc, @transient sc: S
    * applied locally on each slave.
    */
   private def createKafkaInputDStream(
-    tableDesc: TableDesc,
-    path: Path
+    tableDesc: TableDesc
     ): DStream[Writable] = {
     val initializeJobConfFunc = StreamTableReader.initializeLocalJobConfFunc(tableDesc) _
     val properties = tableDesc.getProperties
-    
-    val pathString = path.toString.split("://", 2)(1)
-    val kafkaParams = getPropertyFields(properties, "stream.kafka.params").toMap + 
-      ("zookeeper.connect" -> pathString)
-    val topics = getPropertyFields(properties, "stream.kafka.topics").map(v => (v._1, v._2.toInt)).toMap
-
+    /* uesd for testing only */
+    properties.setProperty("kafka.params.zookeeper.connect", "localhost:2181")
+    properties.setProperty("kafka.params.zookeeper.connection.timeout.ms", "10000")
+    properties.setProperty("kafka.params.group.id", "test")
+    properties.setProperty("kafka.topics", "domestic:1,foreign:1")
+    /*used for testing only above*/
+    val kafkaParams = getPropertyFields(properties, "kafka.params").toMap
+    val topics = properties.getProperty("kafka.topics").split(",").map { topic =>
+      val Array(name, slots) = topic.split(":", 2)
+      (name.trim, slots.trim.toInt)
+    }.toMap
     val storageLevel = getStorageLevel(properties)
     val props = new Properties()
     kafkaParams.foreach(param => props.put(param._1, param._2))
-    val decoder = Class.forName("stream.kafka.decoder").getConstructor(classOf[VerifiableProperties])
+    val decoderName =  properties.getProperty("kafka.decoder", "org.apache.spark.sql.hive.stream.KafkaTextDecoder")
+    val decoder = Class.forName(decoderName).getConstructor(classOf[VerifiableProperties])
       .newInstance(new VerifiableProperties(props)).asInstanceOf[Decoder[Writable]]
-    KafkaUtils.createStream[String, Writable, StringDecoder, KafkaDecoder](sc.streamingContext,
+/**    KafkaUtils.createStream[String, Writable, StringDecoder, KafkaDecoder](sc.streamingContext,
       kafkaParams,
       topics,
       storageLevel
-      ).map(_._2)
+      ).map(_._2)*/
     KafkaUtils.createStream[String, Writable](sc.streamingContext, kafkaParams, topics,
-      new StringDecoder, decoder, storageLevel).map(_._2)
+      new KafkaStringDecoder, decoder, storageLevel).map(_._2)
     // Only take the value (skip the key) because Hive works only with values.
   }
   
@@ -224,14 +219,13 @@ class CommonStreamTableReader(@transient _tableDesc: TableDesc, @transient sc: S
    *
    */
   private def createFlumeInputDStream(
-    tableDesc: TableDesc,
-    path: Path
+    tableDesc: TableDesc
     ): DStream[Writable] = {
     val initializeJobConfFunc = StreamTableReader.initializeLocalJobConfFunc(tableDesc) _
     val properties = tableDesc.getProperties
 
-    val hostname = path.toUri.getHost 
-    val port =  path.toUri.getPort 
+    val hostname = properties.getProperty("flume.host", "localhost")
+    val port = properties.getProperty("flume.port", "50001").toInt
 
     val storageLevel = getStorageLevel(properties)
     FlumeUtils.createStream(sc.streamingContext, hostname, port, storageLevel).map { event => 
@@ -240,18 +234,17 @@ class CommonStreamTableReader(@transient _tableDesc: TableDesc, @transient sc: S
   }
 
   private def createTwitterInputDStream(
-    tableDesc: TableDesc,
-    path: Path
+    tableDesc: TableDesc
     ): DStream[Writable] = {
     val initializeJobConfFunc = StreamTableReader.initializeLocalJobConfFunc(tableDesc) _
     val properties = tableDesc.getProperties
 
-    val hostname = path.toUri.getHost 
-    val port =  path.toUri.getPort 
+    val hostname = properties.getProperty("twitter.host", "localhost")
+    val port = properties.getProperty("twitter.port", "50001").toInt
 
     val storageLevel = getStorageLevel(properties)
-    val filters = properties.getProperty("stream.twitter.filters", "").split(",").toSeq
-    val authName = properties.getProperty("stream.twitter.authorization")
+    val filters = properties.getProperty("twitter.filters", "").split(",").toSeq
+    val authName = properties.getProperty("twitter.authorization")
     val authorization = if (authName == null) {
       None
     } else {
@@ -265,14 +258,13 @@ class CommonStreamTableReader(@transient _tableDesc: TableDesc, @transient sc: S
   
   
   private def createSocketInputDStream(
-    tableDesc: TableDesc,
-    path: Path
+    tableDesc: TableDesc
     ): DStream[Writable] = {
     val initializeJobConfFunc = StreamTableReader.initializeLocalJobConfFunc(tableDesc) _
     val properties = tableDesc.getProperties
     
-    val hostname = path.toUri.getHost 
-    val port =  path.toUri.getPort 
+    val hostname = properties.getProperty("socket.host", "localhost")
+    val port = properties.getProperty("socket.port", "50001").toInt
 
     val storageLevel = getStorageLevel(properties)
     val decoder = properties.getProperty("stream.decoder", DefaultStreamDecoder.getClass.getName)
@@ -282,35 +274,35 @@ class CommonStreamTableReader(@transient _tableDesc: TableDesc, @transient sc: S
   }
   
   private def createZeroMQInputDStream(
-    tableDesc: TableDesc,
-    path: Path
+    tableDesc: TableDesc
     ): DStream[Writable] = {
     val initializeJobConfFunc = StreamTableReader.initializeLocalJobConfFunc(tableDesc) _
     val properties = tableDesc.getProperties
 
-    val topic = properties.getProperty("stream.zeromq.topic","")
+    val path = properties.getProperty("zeromq.path","localhost:50001")
+    val topic = properties.getProperty("zeromq.topic","")
     val storageLevel = getStorageLevel(properties)
-    val stragegyName = properties.getProperty("stream.zeromq.supervisorStrategy")
+    val stragegyName = properties.getProperty("zeromq.supervisorStrategy")
     val stragegy = if (stragegyName == null) {
       ReceiverSupervisorStrategy.defaultStrategy
     } else {
       stragegyName.getClass.newInstance.asInstanceOf[SupervisorStrategy]
     }
     val decoder = properties.getProperty("stream.decoder", DefaultStreamDecoder.getClass.getName)
-    ZeroMQUtils.createStream[Writable](sc.streamingContext, path.toString, Subscribe(topic),
+    ZeroMQUtils.createStream[Writable](sc.streamingContext, path, Subscribe(topic),
                                        (decoder.getClass.newInstance.asInstanceOf[ZeroMqDecoder]).bytesToObject _,
                                         storageLevel, stragegy)
   }
   
   private def createMqttInputDStream(
-    tableDesc: TableDesc,
-    path: Path
+    tableDesc: TableDesc
     ): DStream[Writable] = {
     val initializeJobConfFunc = StreamTableReader.initializeLocalJobConfFunc(tableDesc) _
     val properties = tableDesc.getProperties
 
+    val path = properties.getProperty("mqtt.path","localhost:50001")
     val storageLevel = getStorageLevel(properties)
-    val topic = properties.getProperty("stream.mqtt.topic","")
+    val topic = properties.getProperty("mqtt.topic","")
     MQTTUtils.createStream(sc.streamingContext, path.toString, topic, storageLevel)
     .map(v => new Text(v))
   }
