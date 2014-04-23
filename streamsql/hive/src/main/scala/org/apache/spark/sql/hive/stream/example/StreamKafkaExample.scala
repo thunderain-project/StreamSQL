@@ -49,7 +49,9 @@ object StreamTableReaderKafka {
       """TBLPROPERTIES("scheme"="kafka","kafka.params.zookeeper.connect"="localhost:50001,localhost:50002") """)
       //"stream.kafka.params"="group.id#test:zookeeper.connection.timeout.ms#10000","topics"="domestic#1:foreign#1,
     val result = streamHiveContext.streamHiveql(
-      "SELECT vid, count(1) as visitNum from KafkaStream GROUP BY vid ORDER BY visitNum LIMIT 100"
+      "SELECT * from KafkaStream"
+//      "SELECT vid, count(1) as visitNum from KafkaStream GROUP BY vid"
+//      "SELECT vid, count(1) as visitNum from KafkaStream GROUP BY vid ORDER BY visitNum LIMIT 100"
     )
     result.print()
     ssc.start()

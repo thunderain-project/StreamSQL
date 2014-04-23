@@ -46,14 +46,14 @@ trait KafkaDecoder extends Decoder[Writable] with Serializable {
 }
 
 class KafkaTextDecoder(props: VerifiableProperties = null) extends KafkaDecoder {
-  def this() = this(null)
+  
   override def fromBytes(bytes: Array[Byte]): Writable = {
     new Text(bytes)
   }
 }
 
 class KafkaStringDecoder(props: VerifiableProperties = null) extends Decoder[String] with Serializable {
-  def this() = this(null)
+  
   val encoding =
     if(props == null)
       "UTF8"
@@ -75,4 +75,3 @@ trait StreamDecoder extends SocketDecoder with ZeroMqDecoder
 
 object DefaultStreamDecoder extends StreamDecoder
 object DefaultInputFilter extends InputFilter
-

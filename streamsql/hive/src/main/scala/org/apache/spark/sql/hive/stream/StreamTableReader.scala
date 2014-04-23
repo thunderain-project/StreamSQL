@@ -205,19 +205,11 @@ class CommonStreamTableReader(@transient _tableDesc: TableDesc, @transient sc: S
     val decoderName =  properties.getProperty("kafka.decoder", "org.apache.spark.sql.hive.stream.KafkaTextDecoder")
     val decoder = Class.forName(decoderName).getConstructor(classOf[VerifiableProperties])
       .newInstance(new VerifiableProperties(props)).asInstanceOf[Decoder[Writable]]
-/**    KafkaUtils.createStream[String, Writable, StringDecoder, KafkaDecoder](sc.streamingContext,
-      kafkaParams,
-      topics,
-      storageLevel
-      ).map(_._2)*/
     KafkaUtils.createStream[String, Writable](sc.streamingContext, kafkaParams, topics,
       new KafkaStringDecoder, decoder, storageLevel).map(_._2)
     // Only take the value (skip the key) because Hive works only with values.
   }
   
-  /**
-   *
-   */
   private def createFlumeInputDStream(
     tableDesc: TableDesc
     ): DStream[Writable] = {
@@ -232,7 +224,7 @@ class CommonStreamTableReader(@transient _tableDesc: TableDesc, @transient sc: S
       new ObjectWritable(event.getClass, event)
     }
   }
-
+  
   private def createTwitterInputDStream(
     tableDesc: TableDesc
     ): DStream[Writable] = {
@@ -255,7 +247,6 @@ class CommonStreamTableReader(@transient _tableDesc: TableDesc, @transient sc: S
       new ObjectWritable(status.getClass, status)
     }
   }
-  
   
   private def createSocketInputDStream(
     tableDesc: TableDesc
