@@ -23,6 +23,7 @@ import java.net.Socket
 import scala.reflect.ClassTag
 
 import org.apache.hadoop.io.{NullWritable, Writable, Text}
+import org.apache.spark.sql.hive.stream.CreateStreamDesc
 
 case class SocketInputSplit(var host: String, var port: Int, var idx: Int)
   extends StreamInputSplit {
@@ -51,9 +52,6 @@ case class SocketInputSplit(var host: String, var port: Int, var idx: Int)
 
 class SocketRecordReader[T <: Writable : ClassTag](split: InputSplit, conf: JobConf)
   extends StreamRecordReader[NullWritable, T] {
-  def createKey(): NullWritable = NullWritable.get
-  def createValue(): T = implicitly[ClassTag[T]].runtimeClass.newInstance.asInstanceOf[T]
-
   protected var isSocketOpened = false
   protected var inputStream: InputStream = _
 
@@ -61,6 +59,9 @@ class SocketRecordReader[T <: Writable : ClassTag](split: InputSplit, conf: JobC
     assert(isSocketOpened == true)
     new DataInputStream(inputStream)
   }
+
+  def createKey(): NullWritable = NullWritable.get
+  def createValue(): T = implicitly[ClassTag[T]].runtimeClass.newInstance.asInstanceOf[T]
 
   protected def initInputStream(sockInputSplit: SocketInputSplit) = synchronized {
     if (!isSocketOpened) {
@@ -92,18 +93,14 @@ class SocketRecordReader[T <: Writable : ClassTag](split: InputSplit, conf: JobC
 
 class SocketInputFormat[T <: Writable : ClassTag]
   extends StreamInputFormat[NullWritable, T] {
-  def getStreamSplits(job: JobConf, numSplits: Int): Array[StreamInputSplit] =
-    Array.tabulate(numSplits) { idx =>
-      SocketInputSplit(job.get(SocketInputFormat.SOCKET_INPUT_HOST),
-        job.get(SocketInputFormat.SOCKET_INPUT_PORT).toInt, idx)
-    }
+  val socketScheme = "^socket://(.+):(\\d+)".r
+
+  def getStreamSplits(job: JobConf, numSplits: Int): Array[StreamInputSplit] = {
+    val socketScheme(host, port) = job.get(CreateStreamDesc.STREAM_LOCATION).toLowerCase()
+    Array.tabulate(numSplits) { idx => SocketInputSplit(host, port.toInt, idx) }
+  }
 
   def getRecordReader(split: InputSplit, conf: JobConf, reporter: Reporter) =
     new SocketRecordReader[T](split, conf)
 }
 
-
-object SocketInputFormat {
-  val SOCKET_INPUT_HOST = "streamsql.input.socket.host"
-  val SOCKET_INPUT_PORT = "streamsql.input.socket.port"
-}

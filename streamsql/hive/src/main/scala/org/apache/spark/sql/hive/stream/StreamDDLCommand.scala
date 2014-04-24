@@ -30,6 +30,7 @@ import org.apache.spark.sql.stream.LeafNode
 
 object CreateStreamDesc {
   val STREAM_CONSTANTS = ("STREAM", "TRUE")
+  val STREAM_LOCATION = "STREAM_LOCATION"
 }
 
 class CreateStreamDesc extends CreateTableDesc
@@ -45,11 +46,14 @@ case class DropStream(dropStreamDesc: DropStreamDesc) extends StreamDDLCommand(d
 case class CreateStream(createStreamDesc: CreateStreamDesc)
   extends StreamDDLCommand(createStreamDesc)
 
-abstract class StreamDDLOperator(ddlDesc: DDLDesc)(@transient streamHiveContext: StreamHiveContext)
-    extends LeafNode {
+abstract class StreamDDLOperator(ddlDesc: DDLDesc)
+    (@transient streamHiveContext: StreamHiveContext)
+  extends LeafNode {
   self: Product =>
+
   final def output = Nil
   final val sparkPlan = dummyPlan
+
   protected lazy val emptyRdd = streamHiveContext.streamingContext.sparkContext
     .parallelize(Seq(new GenericRow(Array[Any]()): Row), 1)
   protected lazy val dummyPlan = ExistingRdd(Nil, emptyRdd)

@@ -30,37 +30,46 @@ import org.apache.spark.streaming.StreamingContext
 class GenericInputDStream[K <: Writable, V <: Writable](
     @transient ssc: StreamingContext,
     broadcastConf: Broadcast[SerializableWritable[Configuration]],
+    initLocalJobConfFuncOpt: Option[JobConf => Unit],
     inputFormatCls: Class[_ <: StreamInputFormat[K, V]],
     idx: (Int, Int),
     storageLevel: StorageLevel)
   extends NetworkInputDStream[(SerializableWritable[K], SerializableWritable[V])](ssc) {
 
   override def getReceiver(): NetworkReceiver[(SerializableWritable[K], SerializableWritable[V])] =
-    new GenericReceiver[K, V](broadcastConf, inputFormatCls, idx, storageLevel)
+    new GenericReceiver[K, V](broadcastConf,
+      initLocalJobConfFuncOpt,
+      inputFormatCls,
+      idx,
+      storageLevel)
 }
 
 class GenericReceiver[K <: Writable, V <: Writable](
     broadcastConf: Broadcast[SerializableWritable[Configuration]],
+    initLocalJobConfFuncOpt: Option[JobConf => Unit],
     inputFormatCls: Class[_ <: StreamInputFormat[K, V]],
     idx: (Int, Int),
     storageLevel: StorageLevel)
   extends NetworkReceiver[(SerializableWritable[K], SerializableWritable[V])] {
 
+  import GenericInputDStream.getJobConf
+  import GenericInputDStream.getStreamInputFormat
+
   protected var isInitialized = false
 
   @transient protected var blockGenerator: BlockGenerator = _
   @transient protected var recordReader: StreamRecordReader[K, V] = _
-  @transient protected var inputFormat = GenericInputDStream.getStreamInputFormat(inputFormatCls,
-    GenericInputDStream.getJobConf(broadcastConf))
+  @transient protected var inputFormat = getStreamInputFormat(inputFormatCls,
+    getJobConf(broadcastConf, initLocalJobConfFuncOpt))
 
   override def getLocationPreference(): Option[String] = {
-    val splits = inputFormat.getSplits(GenericInputDStream.getJobConf(broadcastConf), idx._2)
+    val splits = inputFormat.getSplits(getJobConf(broadcastConf, initLocalJobConfFuncOpt), idx._2)
     splits(idx._1).getLocations.headOption
   }
 
   def onStart() {
     if (!isInitialized) {
-      val conf = GenericInputDStream.getJobConf(broadcastConf)
+      val conf = GenericInputDStream.getJobConf(broadcastConf, initLocalJobConfFuncOpt)
       inputFormat = GenericInputDStream.getStreamInputFormat(inputFormatCls, conf)
       val split = inputFormat.getSplits(conf, idx._2)(idx._1)
       recordReader = inputFormat.getRecordReader(split, conf, Reporter.NULL)
@@ -92,16 +101,34 @@ object GenericInputDStream {
     conf: JobConf,
     inputFormatCls: Class[_ <: StreamInputFormat[K, V]],
     numReceivers: Int,
+    initJobConfFuncOpt: Option[JobConf => Unit] = None,
     storageLevel: StorageLevel = StorageLevel.MEMORY_ONLY_SER_2): DStream[(K, V)] = {
+    createStream(ssc,
+      ssc.sc.broadcast(new SerializableWritable(conf))
+        .asInstanceOf[Broadcast[SerializableWritable[Configuration]]],
+      inputFormatCls,
+      numReceivers,
+      initJobConfFuncOpt,
+      storageLevel)
+  }
+
+  def createStream[K <: Writable, V <: Writable](
+    ssc: StreamingContext,
+    broadcastConf: Broadcast[SerializableWritable[Configuration]],
+    inputFormatCls: Class[_ <: StreamInputFormat[K, V]],
+    numReceivers: Int,
+    initJobConfFuncOpt: Option[JobConf => Unit],
+    storageLevel: StorageLevel): DStream[(K, V)] = {
     val inputStreams = Array.tabulate(numReceivers) { idx =>
       new GenericInputDStream[K, V](ssc,
-        ssc.sc.broadcast(new SerializableWritable(conf)),
+        broadcastConf,
+        initJobConfFuncOpt,
         inputFormatCls,
         (idx, numReceivers),
         storageLevel)
     }
 
-    ssc.union(inputStreams).map { case (k, v) => (k.value, v.value)}
+    ssc.union(inputStreams).map { case (k, v) => (k.value, v.value) }
   }
 
   def getStreamInputFormat[K, V](
@@ -115,6 +142,15 @@ object GenericInputDStream {
     newInputFormat
   }
 
-  def getJobConf(broadcastConf: Broadcast[SerializableWritable[Configuration]])
-    : JobConf = broadcastConf.value.value.asInstanceOf[JobConf]
+  def getJobConf(broadcastConf: Broadcast[SerializableWritable[Configuration]],
+      initLocalJobConfFuncOpt: Option[JobConf => Unit]): JobConf = {
+    val conf = broadcastConf.value.value
+    if (conf.isInstanceOf[JobConf]) {
+      conf.asInstanceOf[JobConf]
+    } else {
+      val newJobConf = new JobConf(conf)
+      initLocalJobConfFuncOpt.map(f => f(newJobConf))
+      newJobConf
+    }
+  }
 }

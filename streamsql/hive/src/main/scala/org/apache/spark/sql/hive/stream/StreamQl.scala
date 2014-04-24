@@ -79,6 +79,7 @@ object StreamQl {
         ifNotExisted ::
         cols ::
         comment ::
+        location ::
         rowFormat ::
         tableProperties ::
         serializer ::
@@ -91,12 +92,12 @@ object StreamQl {
           "TOK_IFNOTEXISTS",
           "TOK_TABCOLLIST",
           "TOK_TABLECOMMENT",
+          "TOK_TABLELOCATION",
           "TOK_TABLEROWFORMAT",
           "TOK_TABLEPROPERTIES",
           "TOK_TABLESERIALIZER",
           "TOK_TABLEFILEFORMAT",
           "TOK_LIKESTREAM",
-          "TOK_TABLELOCATION",
           "TOK_QUERY",
           "TOK_STORAGEHANDLER",
           "TOK_TABLEBUCKETS",
@@ -124,8 +125,9 @@ object StreamQl {
       createStreamDesc.setTableName(streamName)
       createStreamDesc.setIfNotExists(ifNotExisted.isDefined)
 
-      comment.foreach { case Token("TOK_TABLECOMMENT", Token(c, Nil) :: Nil) => createStreamDesc
-        .setComment(BaseSemanticAnalyzer.unescapeSQLString(c))}
+      comment.foreach { case Token("TOK_TABLECOMMENT", Token(c, Nil) :: Nil) =>
+        createStreamDesc.setComment(BaseSemanticAnalyzer.unescapeSQLString(c))
+      }
 
       cols.foreach { node =>
         val colSchemas = BaseSemanticAnalyzer.getColumns(node.asInstanceOf[ASTNode], true)
@@ -136,6 +138,14 @@ object StreamQl {
       tableProperties.map { node =>
         BaseSemanticAnalyzer.readProps(node.asInstanceOf[ASTNode], tblProps)
       }
+
+      // Parse the stream location, instead to put into table,
+      // here putting into table properties, this implementation is to avoid scheme validation in
+      // Hive.
+      location.foreach { case Token("TOK_TABLELOCATION", Token(c, Nil) :: Nil) =>
+        tblProps.put(CreateStreamDesc.STREAM_LOCATION, BaseSemanticAnalyzer.unescapeSQLString(c))
+      }
+
       createStreamDesc.setTblProps(tblProps)
 
       rowFormat.foreach {

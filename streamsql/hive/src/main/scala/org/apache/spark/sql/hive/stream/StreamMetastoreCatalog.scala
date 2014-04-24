@@ -17,8 +17,6 @@
 
 package org.apache.spark.sql.hive.stream
 
-import java.net.URI
-
 import org.apache.hadoop.hive.metastore.TableType
 import org.apache.hadoop.hive.ql.session.SessionState
 import org.apache.hadoop.hive.serde.serdeConstants
@@ -51,7 +49,6 @@ class StreamMetastoreCatalog (hive: StreamHiveContext)
     Option(createStreamDesc.getTblProps).foreach(tbl.getTTable.getParameters.putAll(_))
     Option(createStreamDesc.getCols).foreach(tbl.setFields(_))
     Option(createStreamDesc.getComment).foreach(tbl.setProperty("comment", _))
-    Option(createStreamDesc.getLocation).foreach(loc => tbl.setDataLocation(new URI(loc)))
 
     //Serde related
     Option(createStreamDesc.getSerName).map { tbl.setSerializationLib(_) }.getOrElse {

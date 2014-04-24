@@ -1,45 +1,32 @@
 package org.apache.spark.sql.hive.stream
 
-import org.apache.hadoop.hive.serde2.Serializer
 import org.apache.hadoop.hive.serde2.objectinspector._
-import org.apache.hadoop.mapred._
 
-import org.apache.spark.sql.hive.StreamHiveContext
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.hive.{ MetastoreRelation, HiveInspectors }
-import org.apache.spark.sql.stream._
-import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.streaming.dstream.DStream
-import scala.Some
-import scala.collection.immutable.ListMap
+
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.ExistingRdd
+import org.apache.spark.sql.hive.{MetastoreRelation, HiveInspectors, StreamHiveContext}
+import org.apache.spark.sql.stream.LeafNode
+
 /* Implicits */
 import scala.collection.JavaConversions._
 
-// ToDo where is StreaSqlContext Created
-case class StreamHiveTableScan(
+case class StreamHiveScan(
     attributes: Seq[Attribute],
     relation: MetastoreRelation)(
-    @transient val sc: StreamHiveContext)
-  extends LeafNode
-  with HiveInspectors {
+    @transient val streamHiveContext: StreamHiveContext)
+  extends LeafNode with HiveInspectors {
 
-  override val sparkPlan = ExistingRdd(output, null)
+  lazy val sparkPlan = ExistingRdd(output, null)
 
   @transient
-  val streamTableReader = new CommonStreamTableReader(relation.tableDesc, sc)
+  val streamReader = new GenericStreamReader(relation.tableDesc, streamHiveContext)
 
-  /**
-   * The hive object inspector for this table, which can be used to extract values from the
-   * serialized row representation.
-   */
   @transient
   lazy val objectInspector =
     relation.tableDesc.getDeserializer.getObjectInspector.asInstanceOf[StructObjectInspector]
 
-  /**
-   * Functions that extract the requested attributes from the hive output.
-   */
   @transient
   protected lazy val attributeFunctions: Seq[(Any) => Any] = {
     attributes.map { a =>
@@ -54,7 +41,7 @@ case class StreamHiveTableScan(
   }
 
   @transient
-  def inputDStream: DStream[_] = streamTableReader.makeDStreamForTable(relation.hiveQlTable)
+  def inputDStream: DStream[_] = streamReader.makeDStreamForStream(relation.hiveQlTable)
 
   def execute() = {
     inputDStream.map { row =>
