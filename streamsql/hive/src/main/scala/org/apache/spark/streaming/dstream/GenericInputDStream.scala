@@ -26,6 +26,7 @@ import org.apache.spark.SerializableWritable
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.StreamingContext
+import org.apache.spark.streaming.receiver.Receiver
 
 class GenericInputDStream[K <: Writable, V <: Writable](
     @transient ssc: StreamingContext,
@@ -34,9 +35,9 @@ class GenericInputDStream[K <: Writable, V <: Writable](
     inputFormatCls: Class[_ <: StreamInputFormat[K, V]],
     idx: (Int, Int),
     storageLevel: StorageLevel)
-  extends NetworkInputDStream[(SerializableWritable[K], SerializableWritable[V])](ssc) {
+  extends ReceiverInputDStream[(SerializableWritable[K], SerializableWritable[V])](ssc) {
 
-  override def getReceiver(): NetworkReceiver[(SerializableWritable[K], SerializableWritable[V])] =
+  override def getReceiver(): Receiver[(SerializableWritable[K], SerializableWritable[V])] =
     new GenericReceiver[K, V](broadcastConf,
       initLocalJobConfFuncOpt,
       inputFormatCls,
@@ -50,48 +51,63 @@ class GenericReceiver[K <: Writable, V <: Writable](
     inputFormatCls: Class[_ <: StreamInputFormat[K, V]],
     idx: (Int, Int),
     storageLevel: StorageLevel)
-  extends NetworkReceiver[(SerializableWritable[K], SerializableWritable[V])] {
+  extends Receiver[(SerializableWritable[K], SerializableWritable[V])](storageLevel) {
 
   import GenericInputDStream.getJobConf
   import GenericInputDStream.getStreamInputFormat
 
   protected var isInitialized = false
 
-  @transient protected var blockGenerator: BlockGenerator = _
   @transient protected var recordReader: StreamRecordReader[K, V] = _
   @transient protected var inputFormat = getStreamInputFormat(inputFormatCls,
     getJobConf(broadcastConf, initLocalJobConfFuncOpt))
 
-  override def getLocationPreference(): Option[String] = {
+  @transient var receivingThread: Thread = null
+
+  override def preferredLocation(): Option[String] = {
     val splits = inputFormat.getSplits(getJobConf(broadcastConf, initLocalJobConfFuncOpt), idx._2)
     splits(idx._1).getLocations.headOption
   }
 
   def onStart() {
-    if (!isInitialized) {
-      val conf = GenericInputDStream.getJobConf(broadcastConf, initLocalJobConfFuncOpt)
-      inputFormat = GenericInputDStream.getStreamInputFormat(inputFormatCls, conf)
-      val split = inputFormat.getSplits(conf, idx._2)(idx._1)
-      recordReader = inputFormat.getRecordReader(split, conf, Reporter.NULL)
-      blockGenerator = new BlockGenerator(storageLevel)
-      blockGenerator.start()
-      isInitialized = true
+    receivingThread = new Thread("Generic Receiver") {
+      override def run() {
+        initialize()
+        receive()
+      }
     }
-
-    val key: K = recordReader.createKey()
-    val value: V = recordReader.createValue()
-
-    while(recordReader.next(key, value)) {
-      blockGenerator += (new SerializableWritable[K](key), new SerializableWritable[V](value))
-    }
-  }
+    receivingThread.start()
+ }
 
   def onStop() {
     if (isInitialized) {
       recordReader.close()
       isInitialized = false
     }
-    blockGenerator.stop()
+    if (receivingThread != null) {
+      receivingThread.join()
+    }
+  }
+
+  protected def initialize() {
+    if (!isInitialized) {
+      val conf = GenericInputDStream.getJobConf(broadcastConf, initLocalJobConfFuncOpt)
+      inputFormat = GenericInputDStream.getStreamInputFormat(inputFormatCls, conf)
+      val split = inputFormat.getSplits(conf, idx._2)(idx._1)
+      recordReader = inputFormat.getRecordReader(split, conf, Reporter.NULL)
+
+      isInitialized = true
+    }
+  }
+
+  protected def receive() {
+    val key: K = recordReader.createKey()
+    val value: V = recordReader.createValue()
+
+    while(recordReader.next(key, value)) {
+      store((new SerializableWritable[K](key), new SerializableWritable[V](value)))
+    }
+
   }
 }
 
