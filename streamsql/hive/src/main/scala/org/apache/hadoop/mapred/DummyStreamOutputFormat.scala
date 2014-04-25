@@ -17,25 +17,26 @@
 
 package org.apache.hadoop.mapred
 
-import java.util.Properties
-
-import org.apache.hadoop.fs.{Path, FileSystem}
+import org.apache.hadoop.io.NullWritable
+import org.apache.hadoop.fs.FileSystem
 import org.apache.hadoop.util.Progressable
-import org.apache.hadoop.hive.ql.io.HiveOutputFormat
-import org.apache.hadoop.hive.ql.exec.FileSinkOperator
-import org.apache.hadoop.io.Writable
 
-abstract class StreamOutputFormat[K, V] extends HiveOutputFormat[K, V] {
+/**
+ * Class for DummyStreamOutputFormat and DummyStreamRecordWriter, only for test.
+ */
+class DummyStreamOutputFormat extends StreamOutputFormat[NullWritable, NullWritable] {
+  class DummyStreamRecordWriter extends StreamRecordWriter[NullWritable, NullWritable] {
+    def write(key: NullWritable, value: NullWritable) {
+    }
+
+    def close(reporter: Reporter) {
+    }
+  }
+
   def getRecordWriter(ignored: FileSystem, job: JobConf, name: String, progress: Progressable)
-    : StreamRecordWriter[K, V]
+    = new DummyStreamRecordWriter
 
-  def getHiveRecordWriter(jc: JobConf,
-    outputPath: Path,
-    valueClz: Class[_ <: Writable],
-    isCompressed: Boolean,
-    tableProperties: Properties,
-    progress: Progressable): FileSinkOperator.RecordWriter = null
+  def checkOutputSpecs(ignored: FileSystem, job: JobConf) {
+  }
 }
-
-abstract class StreamRecordWriter[K, V] extends RecordWriter[K, V]
 
