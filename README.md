@@ -57,14 +57,25 @@ Our StreamSQL provides:
 
     val teenagers = people.where('age >= 10).where('age <= 19).select('name).toDstream
 
-**Combining Hive** (to be implemented)
+**Combining Hive**
 
     val ssc: StreamingContext
     val streamHiveContext = new StreamHiveContext(ssc)
 
     import streamHiveContext._
 
-    sql("CREATE STREAM IF NOT EXISTS src (key INT, value STRING) LOCATION socket://host:port")
+    streamHiveContext.streamHql(
+      """
+        |CREATE STREAM IF NOT EXISTS src (
+        |     key STRING,
+        |     value INT)
+        |ROW FORMAT DELIMITED
+        |   FIELDS TERMINATED BY ' '
+        |STORED AS
+        |  INPUTFORMAT 'org.apache.hadoop.mapred.TextKafkaInputFormat'
+        |  OUTPUTFORMAT 'org.apache.hadoop.mapred.DummyStreamOutputFormat'
+        |LOCATION 'kafka://localhost:2181/topic=test/group=aa'
+      """.stripMargin)
 
     sql("SELECT key, value FROM src").print()
     ssc.start()
@@ -78,8 +89,6 @@ StreamSQL is fully based on [Spark](http://spark.apache.org/), to build and depl
 
 ### Future List ###
 
-1. Build a end-to-end SQL based Streaming processing with Hive MetaStore supported.
-2. Support time-based window slicing on data.
-3. Create a uniform input stream format and output stream format.
+1. Support time-based window slicing on data.
 
 Details please refer to [design document](https://github.com/thunderain-project/StreamSQL/wiki/StreamSQL-Design-Document).
