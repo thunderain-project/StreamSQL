@@ -91,4 +91,4 @@ StreamSQL is fully based on [Spark](http://spark.apache.org/), to build and depl
 
 1. Support time-based window slicing on data.
 
-Details please refer to [design document](https://github.com/thunderain-project/StreamSQL/wiki/StreamSQL-Design-Document).
+Details please refer to [design document](https://github.com/thunderain-project/StreamSQL/wiki).
