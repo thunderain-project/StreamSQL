@@ -1,3 +1,9 @@
+!!! IMPORTANT NOTICE !!!
+==
+This repo is no longer maintained. The latest update can be found in [Intel-bigdata/spark-streamingsql] (https://github.com/Intel-bigdata/spark-streamingsql)
+====
+---
+
 StreamSQL
 ===
 
